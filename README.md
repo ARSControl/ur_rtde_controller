@@ -1,29 +1,33 @@
-# README #
+# UR_RTDE Controller #
 
-This README would normally document whatever steps are necessary to get your application up and running.
+Controllers for the UR10e using the RTDE Libreries
 
-### What is this repository for? ###
+## Dependancies ##
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+* Eigen3
 
-### How do I get set up? ###
+## Installation ##
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+* Clone the Repository inside the `catkin_ws`:
 
-### Contribution guidelines ###
+        git clone https://davide_ferrari@bitbucket.org/davide_ferrari/ur_rtde_controller.git
+        cd ur_rtde_controller
+        git submodule update --init --recursive
 
-* Writing tests
-* Code review
-* Other guidelines
+* Build the RTDE Libraries
 
-### Who do I talk to? ###
+        cd ur_rtde
+        mkdir build
+        cd build
+        cmake ..
+        make
 
-* Repo owner or admin
-* Other community or team contact
+* Build your workspace
+
+        catkin_make
+
+## Running ##
+
+* Launch Cartesian Controller
+  
+        roslaunch ur_speed_control cartesian_controller.launch
