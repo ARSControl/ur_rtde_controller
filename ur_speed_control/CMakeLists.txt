@@ -37,8 +37,8 @@ add_executable(whole_body_admittance src/whole_body_admittance/whole_body_admitt
 target_link_libraries(whole_body_admittance ${catkin_LIBRARIES})
 target_link_libraries(whole_body_admittance PRIVATE ur_rtde::rtde)
 
-add_executable(speed_controller src/speed_controller/speed_controller.cpp)
-target_link_libraries(speed_controller ${catkin_LIBRARIES})
+add_executable(cartesian_controller src/cartesian_controller/cartesian_controller.cpp)
+target_link_libraries(cartesian_controller ${catkin_LIBRARIES})
 
 
 

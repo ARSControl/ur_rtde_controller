@@ -1,0 +1,25 @@
+<launch>
+
+    <!-- Speed Controller - Agruments -->
+    <arg name="max_acc" default="0.25"/>
+    <arg name="ROBOT_IP" default="192.168.2.30"/>
+
+    <!-- Cartesian Controller - Agruments -->
+    <arg name="position_gain" default="2.0"/>
+    <arg name="max_linear_vel" default="0.1"/>
+    <arg name="max_twist_vel" default="0.001"/>
+
+    <!-- UR_RTDE - Speed Control -->
+    <node pkg="ur_speed_control" name="ur_speed_control" type="ur_speed_control" output="screen">
+        <param name="max_acc" value="$(arg max_acc)"/>
+        <param name="ROBOT_IP" value="$(arg ROBOT_IP)"/>
+    </node>
+
+    <!-- Cartesian Controller -->
+    <node pkg="ur_speed_control" name="cartesian_controller" type="cartesian_controller" output="screen">
+        <param name="k" value="$(arg position_gain)"/>
+        <param name="max_linear_vel" value="$(arg max_linear_vel)"/>
+        <param name="max_twist_vel" value="$(arg max_twist_vel)"/>
+    </node>
+
+</launch>

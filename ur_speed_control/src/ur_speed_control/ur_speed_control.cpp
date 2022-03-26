@@ -7,7 +7,7 @@
 
 geometry_msgs::TwistStamped desired_twist;
 
-void twist_callback(const geometry_msgs::TwistStamped msg){desired_twist = msg;}
+void twist_callback(const geometry_msgs::TwistStamped msg) {desired_twist = msg;}
 
 int main(int argc, char **argv)
 {
@@ -19,8 +19,11 @@ int main(int argc, char **argv)
 	ros::Subscriber twist_sub = n.subscribe("twist_cmd", 1, &twist_callback);
 	ros::Publisher pose_pub = n.advertise<geometry_msgs::PoseStamped>("act_pose", 1);
 
-	ur_rtde::RTDEControlInterface* rtde_control = new ur_rtde::RTDEControlInterface("192.168.2.30");
-	ur_rtde::RTDEReceiveInterface* rtde_receive = new ur_rtde::RTDEReceiveInterface("192.168.2.30");
+	std::string ROBOT_IP;
+	if(!n.param<std::string>("ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Usinge Default: " << ROBOT_IP);}
+
+	ur_rtde::RTDEControlInterface* rtde_control = new ur_rtde::RTDEControlInterface(ROBOT_IP);
+	ur_rtde::RTDEReceiveInterface* rtde_receive = new ur_rtde::RTDEReceiveInterface(ROBOT_IP);
 
 	desired_twist.twist.linear.x = 0.0;
 	desired_twist.twist.linear.y = 0.0;
@@ -39,9 +42,11 @@ int main(int argc, char **argv)
 	geometry_msgs::PoseStamped pose;
 	pose_dbl.resize(6);
 
-	// TODO: da launchfile
-	double max_acc = 0.25; // 2.5
+	// Get Params
+	double max_acc;
+	if(!n.param<double>("max_acc", max_acc, 0.25)) {ROS_ERROR_STREAM("Failed To Get \"max_acc\" Param. Usinge Default: " << max_acc);}
 
+	ROS_INFO("UR Speed Controller - Inizialized");
 
 	while (ros::ok()){
 
@@ -52,9 +57,7 @@ int main(int argc, char **argv)
 		desired_twist_dbl[4] = desired_twist.twist.angular.y;
 		desired_twist_dbl[5] = desired_twist.twist.angular.z;
 
-		// xd: tool speed [m/s] (spatial vector)
-		// acceleration: tool position acceleration [m/s^2]
-		// time: time [s] before the function returns (optional)
+		// xd: tool speed [m/s] (spatial vector) | acceleration: tool position acceleration [m/s^2] | time: time [s] before the function returns (optional)
 		rtde_control -> speedL(desired_twist_dbl, max_acc, 0.002);
 
 		pose_dbl = rtde_receive->getTargetTCPPose();

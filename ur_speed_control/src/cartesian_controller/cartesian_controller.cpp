@@ -60,7 +60,7 @@ Eigen::Matrix<double, 4, 4> pose2eigen(geometry_msgs::PoseStamped pose) {
 
 int main(int argc, char **argv) {
 
-  ros::init(argc, argv, "speed_controller");
+  ros::init(argc, argv, "cartesian_controller");
   ros::NodeHandle n;
   ros::Rate loop_rate(500);
 
@@ -76,18 +76,29 @@ int main(int argc, char **argv) {
   actual_pose_flag = false;
   desired_pose_flag = false;
 
-  // TODO: set throttle print
-  std::cout << "WAITING ACTUAL ROBOT POSE" << std::endl;
-  while (actual_pose_flag == false) {
+  while (!actual_pose_flag)
+  {
+
+    ROS_WARN_DELAYED_THROTTLE(2, "Waiting For Actual Robot Pose...");
     ros::spinOnce();
+  
   };
 
-  std::cout << "WAITING DESIRED ROBOT POSE" << std::endl;
-  while (desired_pose_flag == false) {
+  while (!desired_pose_flag)
+  {
+
+    ROS_WARN_DELAYED_THROTTLE(2, "Waiting For Desired Robot Pose...");
     ros::spinOnce();
+
   };
 
-  std::cout << "CONTROLLER STARTED" << std::endl;
+	// Get Params
+  double k, max_linear_vel, max_twist_vel;
+	if(!n.param<double>("k", k, 2.0)) {ROS_ERROR_STREAM("Failed To Get \"position_gain\" Param. Usinge Default: " << k);}
+	if(!n.param<double>("max_linear_vel", max_linear_vel, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_linear_vel\" Param. Usinge Default: " << max_linear_vel);}
+	if(!n.param<double>("max_twist_vel", max_twist_vel, 0.001)) {ROS_ERROR_STREAM("Failed To Get \"max_twist_vel\" Param. Usinge Default: " << max_twist_vel);}
+
+  ROS_INFO("Cartesian Controller - Started");
 
   while (ros::ok()) {
 
@@ -97,21 +108,13 @@ int main(int argc, char **argv) {
 
     std::cout << "E" << error << std::endl << std::endl;
 
-    // TODO: da lauchfile
-    double k = 2.0;
-    double max_linear_vel = 0.01;
-    double max_twist_vel = 0.001;
-
+    // Velocity Setpoint
     velocity = k * error;
+
+    // Set Velocity Limits
     for (int i = 0; i < 3; i++) {
-      if (fabs(velocity(i, 0)) > max_linear_vel) {
-        velocity(i, 0) =
-            velocity(i, 0) / fabs(velocity(i, 0) + 1e-12) * max_linear_vel;
-      }
-      if (fabs(velocity(i + 3, 0)) > max_twist_vel) {
-        velocity(i + 3, 0) = velocity(i + 3, 0) /
-                             fabs(velocity(i + 3, 0) + 1e-12) * max_twist_vel;
-      }
+      if (fabs(velocity(i, 0)) > max_linear_vel) {velocity(i, 0) = velocity(i, 0) / fabs(velocity(i, 0) + 1e-12) * max_linear_vel;}
+      if (fabs(velocity(i + 3, 0)) > max_twist_vel) {velocity(i + 3, 0) = velocity(i + 3, 0) / fabs(velocity(i + 3, 0) + 1e-12) * max_twist_vel;}
     }
 
     std::cout << "V" << velocity << std::endl << std::endl;
@@ -128,6 +131,7 @@ int main(int argc, char **argv) {
 
     ros::spinOnce();
     loop_rate.sleep();
+
   }
 
   return 0;
