@@ -1,0 +1,5 @@
+launchfile: speed_controller node + ur_speed_control
+
+speed_controller è il controllore di velocità
+speed_control è l'algoritmo di henerazione velocità
+
