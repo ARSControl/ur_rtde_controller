@@ -96,9 +96,15 @@ int main(int argc, char **argv) {
   double k, max_linear_vel, max_twist_vel;
 	if(!n.param<double>("k", k, 2.0)) {ROS_ERROR_STREAM("Failed To Get \"position_gain\" Param. Usinge Default: " << k);}
 	if(!n.param<double>("max_linear_vel", max_linear_vel, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_linear_vel\" Param. Usinge Default: " << max_linear_vel);}
-	if(!n.param<double>("max_twist_vel", max_twist_vel, 0.001)) {ROS_ERROR_STREAM("Failed To Get \"max_twist_vel\" Param. Usinge Default: " << max_twist_vel);}
+	if(!n.param<double>("max_twist_vel", max_twist_vel, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_twist_vel\" Param. Usinge Default: " << max_twist_vel);}
 
-  ROS_INFO("Cartesian Controller - Started");
+  std::cout << std::endl;
+  ROS_INFO_STREAM("Position Gain k: " << k);
+  ROS_INFO_STREAM("Max Linear Velocity: " << max_linear_vel);
+  ROS_INFO_STREAM("Max Angular Velocity: " << max_twist_vel);
+
+  std::cout << std::endl;
+  ROS_INFO("Cartesian Controller - Started\n");
 
   while (ros::ok()) {
 

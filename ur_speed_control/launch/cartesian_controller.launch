@@ -7,7 +7,7 @@
     <!-- Cartesian Controller - Agruments -->
     <arg name="position_gain" default="2.0"/>
     <arg name="max_linear_vel" default="0.1"/>
-    <arg name="max_twist_vel" default="0.001"/>
+    <arg name="max_twist_vel" default="0.1"/>
 
     <!-- UR_RTDE - Speed Control -->
     <node pkg="ur_speed_control" name="ur_speed_control" type="ur_speed_control" output="screen">
