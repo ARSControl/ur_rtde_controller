@@ -19,6 +19,7 @@ add_message_files(
 add_service_files(
   FILES
   command_gripper.srv
+  setDouble.srv
 )
 
 generate_messages(

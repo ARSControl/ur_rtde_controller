@@ -8,6 +8,7 @@
     <arg name="position_gain" default="2.0"/>
     <arg name="max_linear_vel" default="0.1"/>
     <arg name="max_twist_vel" default="0.1"/>
+    <arg name="movement_precision" default="0.0001"/>
 
     <!-- UR_RTDE - Speed Control -->
     <node pkg="ur_speed_control" name="ur_speed_control" type="ur_speed_control" output="screen">
@@ -20,6 +21,7 @@
         <param name="k" value="$(arg position_gain)"/>
         <param name="max_linear_vel" value="$(arg max_linear_vel)"/>
         <param name="max_twist_vel" value="$(arg max_twist_vel)"/>
+        <param name="movement_precision" value="$(arg movement_precision)"/>
     </node>
 
 </launch>
