@@ -1,7 +1,7 @@
 #ifndef UR_SPEED_CONTROL_H
 #define UR_SPEED_CONTROL_H
 
-#include "ros/ros.h"
+#include <ros/ros.h>
 
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>

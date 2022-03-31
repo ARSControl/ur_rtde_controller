@@ -43,6 +43,7 @@ URSpeedControl::URSpeedControl(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 URSpeedControl::~URSpeedControl()
 {
 
+	if (!rtde_control_ -> speedJ({0.0, 0.0 ,0.0 ,0.0 ,0.0, 0.0}, 2.5, 0.004)) {ROS_ERROR("ERROR: ROBOT NOT STOPPED");}
 	rtde_control_ -> disconnect();
 
 }
