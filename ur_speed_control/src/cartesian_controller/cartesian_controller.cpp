@@ -64,9 +64,9 @@ int main(int argc, char **argv) {
   ros::NodeHandle n;
   ros::Rate loop_rate(500);
 
-  ros::Subscriber actual_pose_sub = n.subscribe("act_pose", 1, &actual_pose_callback);
-  ros::Subscriber desired_pose_sub = n.subscribe("des_pose", 1, &desired_pose_callback);
-  ros::Publisher twist_cmd_pub = n.advertise<geometry_msgs::TwistStamped>("twist_cmd", 1);
+  ros::Subscriber actual_pose_sub = n.subscribe("/act_pose", 1, &actual_pose_callback);
+  ros::Subscriber desired_pose_sub = n.subscribe("/des_pose", 1, &desired_pose_callback);
+  ros::Publisher twist_cmd_pub = n.advertise<geometry_msgs::TwistStamped>("/twist_cmd", 1);
 
   Eigen::Matrix<double, 4, 4> T_des, T;
   Eigen::Matrix<double, 6, 1> error, velocity;

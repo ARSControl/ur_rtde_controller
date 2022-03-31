@@ -4,8 +4,8 @@ URSpeedControl::URSpeedControl(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 {
 
 	// ---- LOAD PARAMETERS ---- //
-	if(!nh_.param<std::string>("ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Usinge Default: " << ROBOT_IP);}
-	if(!nh_.param<double>("max_acc", max_acc_, 0.25)) {ROS_ERROR_STREAM("Failed To Get \"max_acc\" Param. Usinge Default: " << max_acc_);}
+	if(!nh_.param<std::string>("/ur_speed_control/ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Usinge Default: " << ROBOT_IP);}
+	if(!nh_.param<double>("/ur_speed_control/max_acc", max_acc_, 0.25)) {ROS_ERROR_STREAM("Failed To Get \"max_acc\" Param. Usinge Default: " << max_acc_);}
 
 	// ---- UR RTDE LIBRARY ---- //
 	rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP);
