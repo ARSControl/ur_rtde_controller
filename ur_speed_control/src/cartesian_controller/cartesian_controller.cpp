@@ -17,6 +17,9 @@ CartesianController::CartesianController(ros::NodeHandle &nh, ros::Rate ros_rate
   actual_pose_sub_ = nh_.subscribe("/act_pose", 1, &CartesianController::actualPoseCallback, this);
   desired_pose_sub_ = nh_.subscribe("/des_pose", 1, &CartesianController::desiredPoseCallback, this);
 
+	// ---- ROS - SERVICE CLIENTS ---- //
+  stop_robot_client_ = nh_.serviceClient<std_srvs::Trigger>("/ur_rtde/stop_robot");
+
 	// ---- ROS - SERVICE SERVERS ---- //
   set_movement_precision_server_ = nh_.advertiseService("/cartesian_controller/set_movement_precision", &CartesianController::setMovementPrecisionCallback, this);
 
@@ -117,6 +120,10 @@ bool CartesianController::movementCompletedCheck (Eigen::Matrix<double, 6, 1> po
     std::cout << std::endl;
     ROS_INFO_STREAM("Position Reached - Movement Completed | Position Error: ");
     std::cout << Eigen::abs(position_error.array()) << std::endl << std::endl;
+
+    std_srvs::Trigger stop_robot_srv;
+    if (!stop_robot_client_.call(stop_robot_srv)) {ROS_ERROR("Failed to Call Service: \"/ur_rtde/stop_robot/\"");}
+    if (!stop_robot_srv.response.success) {ROS_ERROR("Failed to Stop Robot");}
 
     // Trajectory Completed
     trajectory_completed_.data = true;

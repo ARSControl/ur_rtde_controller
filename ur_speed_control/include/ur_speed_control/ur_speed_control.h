@@ -9,6 +9,7 @@
 
 #include <geometry_msgs/TwistStamped.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <std_srvs/Trigger.h>
 
 #include "ur_speed_control/command_gripper.h"
 #include "ur_speed_control/robot_status.h"
@@ -58,7 +59,9 @@ class URSpeedControl {
 
         // ---- ROS - SERVICE SERVERS & CALLBACKS ---- //
         ros::ServiceServer onrobot_gripper_service_;
+        ros::ServiceServer stop_robot_service_;
         bool onRobotGripperCallback(ur_speed_control::command_gripper::Request  &req, ur_speed_control::command_gripper::Response &res);
+        bool stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
 
         // ---- UR RTDE FUNCTIONS ---- //
         void readRobotSafetyStatus ();

@@ -7,6 +7,7 @@
 #include <geometry_msgs/TwistStamped.h>
 
 #include <std_msgs/Bool.h>
+#include <std_srvs/Trigger.h>
 #include <ur_speed_control/setDouble.h>
 
 #include <Eigen/Dense>
@@ -54,6 +55,9 @@ class CartesianController {
         ros::Subscriber desired_pose_sub_;
         void actualPoseCallback(const geometry_msgs::PoseStamped msg);
         void desiredPoseCallback(const geometry_msgs::PoseStamped msg);
+        
+        // ---- ROS - SERVICE CLIENTS ---- //
+        ros::ServiceClient stop_robot_client_;
 
         // ---- ROS - SERVICE SERVERS & CALLBACKS ---- //
         ros::ServiceServer set_movement_precision_server_;
