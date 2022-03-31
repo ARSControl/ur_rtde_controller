@@ -9,7 +9,9 @@
 
 #include <geometry_msgs/TwistStamped.h>
 #include <geometry_msgs/PoseStamped.h>
+
 #include "ur_speed_control/command_gripper.h"
+#include "ur_speed_control/robot_status.h"
 
 #include <Eigen/Dense>
 
@@ -48,14 +50,18 @@ class URSpeedControl {
 
         // ---- ROS - PUBLISHERS ---- //
         ros::Publisher pose_pub_;
+        ros::Publisher robot_status_pub_;
 
-        // ---- ROS SUBSCRIBERS & CALLBACKS ---- //
+        // ---- ROS - SUBSCRIBERS & CALLBACKS ---- //
         ros::Subscriber twist_sub_;
         void twistCallback(const geometry_msgs::TwistStamped msg);
 
         // ---- ROS - SERVICE SERVERS & CALLBACKS ---- //
         ros::ServiceServer onrobot_gripper_service_;
         bool onRobotGripperCallback(ur_speed_control::command_gripper::Request  &req, ur_speed_control::command_gripper::Response &res);
+
+        // ---- UR RTDE FUNCTIONS ---- //
+        void readRobotSafetyStatus ();
 
 };
 

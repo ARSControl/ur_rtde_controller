@@ -1,0 +1,22 @@
+# ENUM CONSTANTS
+uint8 IS_NORMAL_MODE = 0
+uint8 IS_REDUCED_MODE = 1
+uint8 IS_PROTECTIVE_STOPPED = 2
+uint8 IS_RECOVERY_MODE = 3
+uint8 IS_SAFEGUARD_STOPPED = 4
+uint8 IS_SYSTEM_EMERGENCY_STOPPED = 5
+uint8 IS_ROBOT_EMERGENCY_STOPPED = 6
+uint8 IS_EMERGENCY_STOPPED = 7
+uint8 IS_VIOLATION = 8
+uint8 IS_FAULT = 9
+uint8 IS_STOPPED_DUE_TO_SAFETY = 10
+
+# MESSAGE
+int32 robot_mode
+string robot_mode_msg
+
+int32 safety_mode
+string safety_mode_msg
+
+uint32 safety_status_bits
+string safety_status_bits_msg

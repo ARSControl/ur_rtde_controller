@@ -3,7 +3,7 @@ bool SLOW=True
 bool OPEN=False
 bool CLOSE=True
 
-bool open_close
-bool fast_slow
+bool movement
+bool velocity
 ---
 bool success

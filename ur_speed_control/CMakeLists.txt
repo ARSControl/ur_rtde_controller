@@ -11,6 +11,11 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(ur_rtde REQUIRED PATHS ../ur_rtde/build/ur_rtde)
 find_package(Eigen3 REQUIRED)
 
+add_message_files(
+  FILES
+  robot_status.msg
+)
+
 add_service_files(
   FILES
   command_gripper.srv

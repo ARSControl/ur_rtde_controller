@@ -12,14 +12,15 @@ URSpeedControl::URSpeedControl(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ROBOT_IP);
 	rtde_io_ = new ur_rtde::RTDEIOInterface(ROBOT_IP);
 
-    // ---- ROS PUBLISHERS ---- //
+    // ---- ROS - PUBLISHERS ---- //
 	pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/act_pose", 1);
+	robot_status_pub_ = nh_.advertise<ur_speed_control::robot_status>("/ur_rtde/safety_status", 1);
 
-    // ---- ROS SUBSCRIBERS ---- //
+    // ---- ROS - SUBSCRIBERS ---- //
 	twist_sub_ = nh_.subscribe("/twist_cmd", 1, &URSpeedControl::twistCallback, this);
 
 	// ---- ROS - SERVICE SERVERS ---- //
-	onrobot_gripper_service_ = nh_.advertiseService("/onrobot_gripper_control", &URSpeedControl::onRobotGripperCallback, this);
+	onrobot_gripper_service_ = nh_.advertiseService("/ur_rtde/onrobot_gripper_control", &URSpeedControl::onRobotGripperCallback, this);
 
     // ---- INITIALIZING CLASS VARIABLES ---- //
 	desired_twist_.twist.linear.x = 0.0;
@@ -54,40 +55,92 @@ void URSpeedControl::twistCallback(const geometry_msgs::TwistStamped msg)
 
 bool URSpeedControl::onRobotGripperCallback(ur_speed_control::command_gripper::Request  &req, ur_speed_control::command_gripper::Response &res) {
 
-
-	//   // fun = 1 to set output pin
-    // setIO_srv.request.fun = 1;
+    // Pin 17 = Tool Digital Opuput 1 (Set Velocity)
+	if (rtde_io_ -> setToolDigitalOut(1, req.velocity)) {ROS_INFO_STREAM("Gripper Velocity Setted: " << (req.velocity ? "SLOW":"FAST"));}
+	else 
+	{
+		ROS_ERROR("ERROR: Failed To Set Gripper Velocity");
+		res.success = false;
+		return false;
+	}
     
-    // // pin 17 = Tool Digital Opuput 1 (set velocity)
-    // setIO_srv.request.pin = 17;
-
-    // // change pin status, FAST = 0, SLOW = 1
-    // if (fast_slow) {setIO_srv.request.state = 0.0;}
-    // else {setIO_srv.request.state = 1.0;}
+    // Pin 16 = Tool Digital Opuput 0 (Open / Close)
+	if (rtde_io_ -> setToolDigitalOut(0, req.movement)) {ROS_INFO_STREAM("Gripper Movement Started: " << (req.movement ? "CLOSE":"OPEN"));}
+	else
+	{
+		ROS_ERROR("ERROR: Failed To Start Gripper Movement");
+		res.success = false;
+		return false;
+	}
     
-    // // Set Velocity
-    // if (setIO_client.call(setIO_srv)) {}
-    // else {ROS_ERROR("Failed to Call Service: \"/ur_hardware_interface/set_io\"");}
+	res.success = true;
+	return res.success;
 
-    // // fun = 1 to set output pin
-    // setIO_srv.request.fun = 1;
-    
-    // // pin 16 = Tool Digital Opuput 0 (open/close)
-    // setIO_srv.request.pin = 16;
+}
 
-    // // change pin status, OPEN = 0, CLOSE = 1
-    // if (open_close) {setIO_srv.request.state = 0.0;}
-    // else {setIO_srv.request.state = 1.0;}
-    
-    // // Open / Close Gripper
-    // if (setIO_client.call(setIO_srv)) {}
-    // else {ROS_ERROR("Failed to Call Service: \"/ur_hardware_interface/set_io\"");}
-	return true;
+void URSpeedControl::readRobotSafetyStatus ()
+{
+	/************************************************
+	 * 												*
+	 *  Safety status bits Bits 0-10:				*
+	 * 												*
+	 * 		0 = Is normal mode						*
+	 * 		1 = Is reduced mode						*
+	 * 		2 = Is protective stopped				*
+	 * 		3 = Is recovery mode					*
+	 * 		4 = Is safeguard stopped				*
+	 * 		5 = Is system emergency stopped			*
+	 * 		6 = Is robot emergency stopped			*
+	 * 		7 = Is emergency stopped				*
+	 * 		8 = Is violation						*
+	 * 		9 = Is fault							*
+	 * 	   10 = Is stopped due to safety 			*
+	 * 												*
+	 ***********************************************/
+
+	/************************************************
+	 * 												*
+	 *  Robot mode									*
+	 * 												*
+	 *	   -1 = ROBOT_MODE_NO_CONTROLLER			*
+	 *		0 = ROBOT_MODE_DISCONNECTED 			*
+	 *		1 = ROBOT_MODE_CONFIRM_SAFETY 			*
+	 *		2 = ROBOT_MODE_BOOTING					*
+	 *		3 = ROBOT_MODE_POWER_OFF				*
+	 *		4 = ROBOT_MODE_POWER_ON					*
+	 * 		5 = ROBOT_MODE_IDLE						*
+	 * 		6 = ROBOT_MODE_BACKDRIVE				*
+	 *		7 = ROBOT_MODE_RUNNING					*
+	 *		8 = ROBOT_MODE_UPDATING_FIRMWARE		*
+	 * 												*
+	 ***********************************************/
+
+
+	ur_speed_control::robot_status robot_status;
+	std::vector<std::string> robot_mode_msg = {"ROBOT_MODE_NO_CONTROLLER", "ROBOT_MODE_DISCONNECTED", "ROBOT_MODE_CONFIRM_SAFETY", "ROBOT_MODE_BOOTING", "ROBOT_MODE_POWER_OFF", "ROBOT_MODE_POWER_ON", "ROBOT_MODE_IDLE", "ROBOT_MODE_BACKDRIVE", "ROBOT_MODE_RUNNING", "ROBOT_MODE_UPDATING_FIRMWARE"};
+	std::vector<std::string> safety_mode_msg = {"Is normal mode", "Is reduced mode", "Is protective stopped", "Is recovery mode", "Is safeguard stopped", "Is system emergency stopped", "Is robot emergency stopped", "Is emergency stopped", "Is violation", "Is fault", "Is stopped due to safety"};
+	std::vector<std::string> safety_status_bits_msg = {"Is normal mode", "Is reduced mode", "Is protective stopped", "Is recovery mode", "Is safeguard stopped", "Is system emergency stopped", "Is robot emergency stopped", "Is emergency stopped", "Is violation", "Is fault", "Is stopped due to safety"};
+	
+	// Get Robot Mode
+	robot_status.robot_mode = rtde_receive_ -> getRobotMode();
+	robot_status.robot_mode_msg = robot_mode_msg[robot_status.robot_mode + 1];
+
+	// Get Safety Mode
+	robot_status.safety_mode = rtde_receive_ -> getSafetyMode();
+	robot_status.safety_mode_msg = safety_mode_msg[robot_status.safety_mode - 1];
+
+	// Get Safety Status Bits
+	robot_status.safety_status_bits = rtde_receive_ -> getSafetyStatusBits();
+	robot_status.safety_status_bits_msg = safety_status_bits_msg[robot_status.safety_status_bits];
+
+	robot_status_pub_.publish(robot_status);
 
 }
 
 void URSpeedControl::spinner()
 {
+	// Read and Publish Robot Status
+	readRobotSafetyStatus();
 
 	desired_twist_dbl_[0] = desired_twist_.twist.linear.x;
 	desired_twist_dbl_[1] = desired_twist_.twist.linear.y;
@@ -114,7 +167,7 @@ void URSpeedControl::spinner()
 	pose_.pose.orientation.w = Eigen::Quaterniond(Eigen::AngleAxisd(angle_, axis_)).w();
 
 	pose_pub_.publish(pose_);
-
+	
 	ros::spinOnce();
 	ros_rate_.sleep();
 
