@@ -1,45 +1,76 @@
-#include "ros/ros.h"
-#include <Eigen/Dense>
-#include <Eigen/Eigen>
-#include <geometry_msgs/PoseStamped.h>
-#include <geometry_msgs/TwistStamped.h>
+#include "cartesian_controller/cartesian_controller.h"
 
-#include <std_msgs/Bool.h>
-#include <ur_speed_control/setDouble.h>
-
-using namespace Eigen;
-
-geometry_msgs::PoseStamped actual_pose;
-bool actual_pose_flag;
-
-geometry_msgs::PoseStamped desired_pose;
-bool desired_pose_flag;
-
-std_msgs::Bool trajectory_completed;
-double movement_precision = 0.0001;
-
-void actual_pose_callback(const geometry_msgs::PoseStamped msg)
+CartesianController::CartesianController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh), ros_rate_(ros_rate)
 {
-  actual_pose = msg;
-  actual_pose_flag = true;
+
+	// ---- LOAD PARAMETERS ---- //
+	if(!nh_.param<double>("/cartesian_controller/k", k_, 2.0)) {ROS_ERROR_STREAM("Failed To Get \"position_gain\" Param. Usinge Default: " << k_);}
+	if(!nh_.param<double>("/cartesian_controller/max_linear_vel", max_linear_vel_, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_linear_vel\" Param. Usinge Default: " << max_linear_vel_);}
+	if(!nh_.param<double>("/cartesian_controller/max_twist_vel", max_twist_vel_, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_twist_vel\" Param. Usinge Default: " << max_twist_vel_);}
+	if(!nh_.param<double>("/cartesian_controller/movement_precision", movement_precision_, 0.0001)) {ROS_ERROR_STREAM("Failed To Get \"movement_precision\" Param. Usinge Default: " << movement_precision_);}
+
+  // ---- ROS - PUBLISHERS ---- //
+  twist_cmd_pub_ = nh_.advertise<geometry_msgs::TwistStamped>("/twist_cmd", 1);
+  trajectory_completed_pub_ = nh_.advertise<std_msgs::Bool>("/cartesian_controller/trajectory_completed", 1);
+
+  // ---- ROS - SUBSCRIBERS ---- //
+  actual_pose_sub_ = nh_.subscribe("/act_pose", 1, &CartesianController::actualPoseCallback, this);
+  desired_pose_sub_ = nh_.subscribe("/des_pose", 1, &CartesianController::desiredPoseCallback, this);
+
+	// ---- ROS - SERVICE SERVERS ---- //
+  set_movement_precision_server_ = nh_.advertiseService("/cartesian_controller/set_movement_precision", &CartesianController::setMovementPrecisionCallback, this);
+
+  ros::Duration(2).sleep();
+
+  // Wait Actual Position
+  while (!actual_pose_flag_)
+  {
+    ROS_WARN_DELAYED_THROTTLE(2, "Waiting For Actual Robot Pose...");
+    ros::spinOnce();
+  }
+
+  // Print Parameters
+  std::cout << std::endl;
+  ROS_INFO_STREAM("Position Gain k: " << k_);
+  ROS_INFO_STREAM("Max Linear Velocity: " << max_linear_vel_);
+  ROS_INFO_STREAM("Max Angular Velocity: " << max_twist_vel_);
+  ROS_INFO_STREAM("Movement Precision: " << movement_precision_);
+
+  std::cout << std::endl;
+  ROS_INFO("Cartesian Controller - Started\n");
+
 }
 
-void desired_pose_callback(const geometry_msgs::PoseStamped msg)
+CartesianController::~CartesianController() {}
+
+void CartesianController::actualPoseCallback(const geometry_msgs::PoseStamped msg)
 {
-  desired_pose = msg;
-  desired_pose_flag = true;
+
+  actual_pose_ = msg;
+  actual_pose_flag_ = true;
+
 }
 
-bool setMovementPrecisionCallback(ur_speed_control::setDouble::Request  &req, ur_speed_control::setDouble::Response &res) {
+void CartesianController::desiredPoseCallback(const geometry_msgs::PoseStamped msg)
+{
+
+  desired_pose_ = msg;
+  desired_pose_flag_ = true;
+
+}
+
+bool CartesianController::setMovementPrecisionCallback(ur_speed_control::setDouble::Request  &req, ur_speed_control::setDouble::Response &res)
+{
 
   ROS_WARN_STREAM("Movement Precision Changed To: " << req.data);
-  movement_precision = req.data;
+  movement_precision_ = req.data;
 	res.success = true;
 	return res.success;
 
 }
 
-Eigen::Matrix<double, 6, 1> compute_pose_error(Eigen::Matrix<double, 4, 4> T_des, Eigen::Matrix<double, 4, 4> T) {
+Eigen::Matrix<double, 6, 1> CartesianController::compute_pose_error(Eigen::Matrix<double, 4, 4> T_des, Eigen::Matrix<double, 4, 4> T)
+{
 
   Eigen::Matrix<double, 6, 1> err;
 
@@ -59,7 +90,8 @@ Eigen::Matrix<double, 6, 1> compute_pose_error(Eigen::Matrix<double, 4, 4> T_des
 
 }
 
-Eigen::Matrix<double, 4, 4> pose2eigen(geometry_msgs::PoseStamped pose) {
+Eigen::Matrix<double, 4, 4> CartesianController::pose2eigen(geometry_msgs::PoseStamped pose)
+{
 
   Eigen::Matrix<double, 4, 4> T = Eigen::Matrix<double, 4, 4>::Identity();
 
@@ -76,11 +108,10 @@ Eigen::Matrix<double, 4, 4> pose2eigen(geometry_msgs::PoseStamped pose) {
 
 }
 
-bool movementCompletedCheck (Eigen::Matrix<double, 6, 1> position_error)
+bool CartesianController::movementCompletedCheck (Eigen::Matrix<double, 6, 1> position_error)
 {
 
-
-  if ((Eigen::abs(position_error.array()) < movement_precision).all())
+  if ((Eigen::abs(position_error.array()) < movement_precision_).all())
   {
 
     std::cout << std::endl;
@@ -88,121 +119,70 @@ bool movementCompletedCheck (Eigen::Matrix<double, 6, 1> position_error)
     std::cout << Eigen::abs(position_error.array()) << std::endl << std::endl;
 
     // Trajectory Completed
-    trajectory_completed.data = true;
+    trajectory_completed_.data = true;
 
     return true;
 
   }
 
   // Not Trajectory Completed
-  trajectory_completed.data = false;
+  trajectory_completed_.data = false;
 
   return false;
 
 }
 
-int main (int argc, char **argv) {
+void CartesianController::spinner()
+{
 
-  ros::init(argc, argv, "cartesian_controller");
-  ros::NodeHandle n;
-  ros::Rate loop_rate(500);
-
-  ros::Publisher twist_cmd_pub = n.advertise<geometry_msgs::TwistStamped>("/twist_cmd", 1);
-  ros::Publisher trajectory_completed_pub = n.advertise<std_msgs::Bool>("/cartesian_controller/trajectory_completed", 1);
-
-  ros::Subscriber actual_pose_sub = n.subscribe("/act_pose", 1, &actual_pose_callback);
-  ros::Subscriber desired_pose_sub = n.subscribe("/des_pose", 1, &desired_pose_callback);
-
-  ros::ServiceServer set_movement_precision_server = n.advertiseService("/cartesian_controller/set_movement_precision", &setMovementPrecisionCallback);
-
-  Eigen::Matrix<double, 4, 4> T_des, T;
-  Eigen::Matrix<double, 6, 1> error, velocity;
-
-  geometry_msgs::TwistStamped twist_cmd;
-
-  actual_pose_flag = false;
-  desired_pose_flag = false;
-
-  ros::Duration(2).sleep();
-
-  while (!actual_pose_flag)
+  while (ros::ok() && !desired_pose_flag_)
   {
-
-    ROS_WARN_DELAYED_THROTTLE(2, "Waiting For Actual Robot Pose...");
+    
+    ROS_WARN_DELAYED_THROTTLE(2, "Waiting For Desired Robot Pose...");
     ros::spinOnce();
-  
-  };
-
-	// Get Params
-  double k, max_linear_vel, max_twist_vel;
-	if(!n.param<double>("/cartesian_controller/k", k, 2.0)) {ROS_ERROR_STREAM("Failed To Get \"position_gain\" Param. Usinge Default: " << k);}
-	if(!n.param<double>("/cartesian_controller/max_linear_vel", max_linear_vel, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_linear_vel\" Param. Usinge Default: " << max_linear_vel);}
-	if(!n.param<double>("/cartesian_controller/max_twist_vel", max_twist_vel, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_twist_vel\" Param. Usinge Default: " << max_twist_vel);}
-	if(!n.param<double>("/cartesian_controller/movement_precision", movement_precision, 0.0001)) {ROS_ERROR_STREAM("Failed To Get \"movement_precision\" Param. Usinge Default: " << movement_precision);}
-
-  std::cout << std::endl;
-  ROS_INFO_STREAM("Position Gain k: " << k);
-  ROS_INFO_STREAM("Max Linear Velocity: " << max_linear_vel);
-  ROS_INFO_STREAM("Max Angular Velocity: " << max_twist_vel);
-  ROS_INFO_STREAM("Movement Precision: " << movement_precision);
-
-  std::cout << std::endl;
-  ROS_INFO("Cartesian Controller - Started\n");
-
-  while (ros::ok()) {
-
-    while (ros::ok() && !desired_pose_flag)
-    {
-     
-      ROS_WARN_DELAYED_THROTTLE(2, "Waiting For Desired Robot Pose...");
-      ros::spinOnce();
-     
-      if (desired_pose_flag) {std::cout << std::endl;}
-
-    }
-
-    T_des = pose2eigen(desired_pose);
-    T = pose2eigen(actual_pose);
-    error = -compute_pose_error(T_des, T);
-
-    // Velocity Setpoint
-    velocity = k * error;
-
-    // Set Velocity Limits
-    for (int i = 0; i < 3; i++) {
-      if (fabs(velocity(i, 0)) > max_linear_vel) {velocity(i, 0) = velocity(i, 0) / fabs(velocity(i, 0) + 1e-12) * max_linear_vel;}
-      if (fabs(velocity(i + 3, 0)) > max_twist_vel) {velocity(i + 3, 0) = velocity(i + 3, 0) / fabs(velocity(i + 3, 0) + 1e-12) * max_twist_vel;}
-    }
-
-    // Convert Eigen Matrix to Vector for Printing
-    std::vector<double> error_vec(error.data(), error.data() + error.rows() * error.cols());
-    std::vector<double> velocity_vec(velocity.data(), velocity.data() + velocity.rows() * velocity.cols());
-
-    ROS_INFO_STREAM_THROTTLE(5, "Position Error: " << error_vec[0] << " " << error_vec[1] << " " << error_vec[2]
-                                            << " " << error_vec[3] << " " << error_vec[4] << " " << error_vec[5]);
-
-    ROS_INFO_STREAM_THROTTLE(5, "Velocity: " << velocity_vec[0] << " " << velocity_vec[1] << " " << velocity_vec[2]
-                                      << " " << velocity_vec[3] << " " << velocity_vec[4] << " " << velocity_vec[5] << "\n");
-
-    twist_cmd.twist.linear.x = velocity(0, 0);
-    twist_cmd.twist.linear.y = velocity(1, 0);
-    twist_cmd.twist.linear.z = velocity(2, 0);
-
-    twist_cmd.twist.angular.x = velocity(3, 0);
-    twist_cmd.twist.angular.y = velocity(4, 0);
-    twist_cmd.twist.angular.z = velocity(5, 0);
-
-    twist_cmd_pub.publish(twist_cmd);
-
-    ros::spinOnce();
-
-    desired_pose_flag = !movementCompletedCheck(error);
-    trajectory_completed_pub.publish(trajectory_completed);
-
-    loop_rate.sleep();
+    
+    if (desired_pose_flag_) {std::cout << std::endl;}
 
   }
 
-  return 0;
+  T_des_ = pose2eigen(desired_pose_);
+  T_ = pose2eigen(actual_pose_);
+  error_ = -compute_pose_error(T_des_, T_);
+
+  // Velocity Setpoint
+  velocity_ = k_ * error_;
+
+  // Set Velocity Limits
+  for (int i = 0; i < 3; i++) {
+    if (fabs(velocity_(i, 0)) > max_linear_vel_) {velocity_(i, 0) = velocity_(i, 0) / fabs(velocity_(i, 0) + 1e-12) * max_linear_vel_;}
+    if (fabs(velocity_(i + 3, 0)) > max_twist_vel_) {velocity_(i + 3, 0) = velocity_(i + 3, 0) / fabs(velocity_(i + 3, 0) + 1e-12) * max_twist_vel_;}
+  }
+
+  // Convert Eigen Matrix to Vector for Printing
+  std::vector<double> error_vec_(error_.data(), error_.data() + error_.rows() * error_.cols());
+  std::vector<double> velocity_vec_(velocity_.data(), velocity_.data() + velocity_.rows() * velocity_.cols());
+
+  ROS_INFO_STREAM_THROTTLE(5, "Position Error: " << error_vec_[0] << " " << error_vec_[1] << " " << error_vec_[2]
+                                          << " " << error_vec_[3] << " " << error_vec_[4] << " " << error_vec_[5]);
+
+  ROS_INFO_STREAM_THROTTLE(5, "Velocity: " << velocity_vec_[0] << " " << velocity_vec_[1] << " " << velocity_vec_[2]
+                                    << " " << velocity_vec_[3] << " " << velocity_vec_[4] << " " << velocity_vec_[5] << "\n");
+
+  twist_cmd_.twist.linear.x = velocity_(0, 0);
+  twist_cmd_.twist.linear.y = velocity_(1, 0);
+  twist_cmd_.twist.linear.z = velocity_(2, 0);
+
+  twist_cmd_.twist.angular.x = velocity_(3, 0);
+  twist_cmd_.twist.angular.y = velocity_(4, 0);
+  twist_cmd_.twist.angular.z = velocity_(5, 0);
+
+  twist_cmd_pub_.publish(twist_cmd_);
+
+  ros::spinOnce();
+
+  desired_pose_flag_ = !movementCompletedCheck(error_);
+  trajectory_completed_pub_.publish(trajectory_completed_);
+
+  ros_rate_.sleep();
 
 }
