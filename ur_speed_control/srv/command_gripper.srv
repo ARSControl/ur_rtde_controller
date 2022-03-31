@@ -1,0 +1,9 @@
+bool FAST=False
+bool SLOW=True
+bool OPEN=False
+bool CLOSE=True
+
+bool open_close
+bool fast_slow
+---
+bool success
