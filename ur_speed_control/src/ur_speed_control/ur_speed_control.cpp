@@ -95,7 +95,7 @@ void URSpeedControl::readRobotSafetyStatus ()
 {
 	/************************************************
 	 * 												*
-	 *  Safety status bits Bits 0-10:				*
+	 *  Safety Status Bits 0-10:					*
 	 * 												*
 	 * 		0 = Is normal mode						*
 	 * 		1 = Is reduced mode						*
@@ -113,7 +113,23 @@ void URSpeedControl::readRobotSafetyStatus ()
 
 	/************************************************
 	 * 												*
-	 *  Robot mode									*
+	 *  Safety Mode									*
+	 * 												*
+	 *		0 = NORMAL					 			*
+	 *		1 = REDUCED					 			*
+	 *		2 = PROTECTIVE_STOP						*
+	 *		3 = RECOVERY							*
+	 *		4 = SAFEGUARD_STOP						*
+	 * 		5 = SYSTEM_EMERGENCY_STOP				*
+	 * 		6 = ROBOT_EMERGENCY_STOP				*
+	 *		7 = VIOLATION							*
+	 *		8 = FAULT								*
+	 * 												*
+	 ***********************************************/
+
+	/************************************************
+	 * 												*
+	 *  Robot Mode									*
 	 * 												*
 	 *	   -1 = ROBOT_MODE_NO_CONTROLLER			*
 	 *		0 = ROBOT_MODE_DISCONNECTED 			*
@@ -128,10 +144,9 @@ void URSpeedControl::readRobotSafetyStatus ()
 	 * 												*
 	 ***********************************************/
 
-
 	ur_speed_control::robot_status robot_status;
 	std::vector<std::string> robot_mode_msg = {"ROBOT_MODE_NO_CONTROLLER", "ROBOT_MODE_DISCONNECTED", "ROBOT_MODE_CONFIRM_SAFETY", "ROBOT_MODE_BOOTING", "ROBOT_MODE_POWER_OFF", "ROBOT_MODE_POWER_ON", "ROBOT_MODE_IDLE", "ROBOT_MODE_BACKDRIVE", "ROBOT_MODE_RUNNING", "ROBOT_MODE_UPDATING_FIRMWARE"};
-	std::vector<std::string> safety_mode_msg = {"", "Is normal mode", "Is reduced mode", "Is protective stopped", "Is recovery mode", "Is safeguard stopped", "Is system emergency stopped", "Is robot emergency stopped", "Is emergency stopped", "Is violation", "Is fault", "Is stopped due to safety"};
+	std::vector<std::string> safety_mode_msg = {"NORMAL", "REDUCED", "PROTECTIVE_STOP", "RECOVERY", "SAFEGUARD_STOP", "SYSTEM_EMERGENCY_STOP", "ROBOT_EMERGENCY_STOP", "VIOLATION" "FAULT"};
 	std::vector<std::string> safety_status_bits_msg = {"Is normal mode", "Is reduced mode", "Is protective stopped", "Is recovery mode", "Is safeguard stopped", "Is system emergency stopped", "Is robot emergency stopped", "Is emergency stopped", "Is violation", "Is fault", "Is stopped due to safety"};
 	
 	// Get Robot Mode
@@ -143,7 +158,7 @@ void URSpeedControl::readRobotSafetyStatus ()
 	robot_status.safety_mode_msg = safety_mode_msg[robot_status.safety_mode];
 
 	// Get Safety Status Bits
-	robot_status.safety_status_bits = rtde_receive_ -> getSafetyStatusBits();
+	robot_status.safety_status_bits = int(rtde_receive_ -> getSafetyStatusBits());
 	robot_status.safety_status_bits_msg = safety_status_bits_msg[robot_status.safety_status_bits];
 
 	robot_status_pub_.publish(robot_status);
