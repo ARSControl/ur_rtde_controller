@@ -3,10 +3,10 @@
 void UR_Stop_Signal_Handler (int sig) {
 
 	// ---- UR RTDE LIBRARY ---- //
-	ur_rtde::RTDEControlInterface *rtde_control_ = new ur_rtde::RTDEControlInterface("192.168.2.30");
+	// ur_rtde::RTDEControlInterface *rtde_control_ = new ur_rtde::RTDEControlInterface("192.168.2.30");
 
-	rtde_control_ -> stopL(2.0);
-	rtde_control_ -> disconnect();
+	// rtde_control_ -> stopL(2.0);
+	// rtde_control_ -> disconnect();
 
 }
 
