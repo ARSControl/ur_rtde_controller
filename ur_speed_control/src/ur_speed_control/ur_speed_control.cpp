@@ -43,8 +43,8 @@ URSpeedControl::URSpeedControl(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 URSpeedControl::~URSpeedControl()
 {
 
-	// if (!rtde_control_ -> speedJ({0.0, 0.0 ,0.0 ,0.0 ,0.0, 0.0}, 2.5, 0.002)) {ROS_ERROR("ERROR: ROBOT NOT STOPPED");}
-	// rtde_control_ -> disconnect();
+	rtde_control_ -> stopL(2.0);
+	rtde_control_ -> disconnect();
 
 }
 
@@ -52,6 +52,7 @@ void URSpeedControl::twistCallback(const geometry_msgs::TwistStamped msg)
 {
 	
 	desired_twist_ = msg;
+	move_ = true;
 	
 }
 
@@ -85,6 +86,8 @@ bool URSpeedControl::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs
 	
 	// Command Zero Velocity
 	rtde_control_ -> stopL(2.0);
+	ros::Duration(0.1).sleep();
+	move_ = false;
 
 	res.success = true;
 	return true;
@@ -168,17 +171,26 @@ void URSpeedControl::readRobotSafetyStatus ()
 void URSpeedControl::spinner()
 {
 	// Read and Publish Robot Status
-	// readRobotSafetyStatus();
+	readRobotSafetyStatus();
 
-	desired_twist_dbl_[0] = desired_twist_.twist.linear.x;
-	desired_twist_dbl_[1] = desired_twist_.twist.linear.y;
-	desired_twist_dbl_[2] = desired_twist_.twist.linear.z;
-	desired_twist_dbl_[3] = desired_twist_.twist.angular.x;
-	desired_twist_dbl_[4] = desired_twist_.twist.angular.y;
-	desired_twist_dbl_[5] = desired_twist_.twist.angular.z;
+	if (move_)
+	{
 
-	// xd: tool speed [m/s] (spatial vector) | acceleration: tool position acceleration [m/s^2] | time: time [s] before the function returns (optional)
-	rtde_control_ -> speedL(desired_twist_dbl_, max_acc_, 0.002);
+		desired_twist_dbl_[0] = desired_twist_.twist.linear.x;
+		desired_twist_dbl_[1] = desired_twist_.twist.linear.y;
+		desired_twist_dbl_[2] = desired_twist_.twist.linear.z;
+		desired_twist_dbl_[3] = desired_twist_.twist.angular.x;
+		desired_twist_dbl_[4] = desired_twist_.twist.angular.y;
+		desired_twist_dbl_[5] = desired_twist_.twist.angular.z;
+
+		// xd: tool speed [m/s] (spatial vector) | acceleration: tool position acceleration [m/s^2] | time: time [s] before the function returns (optional)
+		rtde_control_ -> speedL(desired_twist_dbl_, max_acc_, 0.002);
+
+	} 
+	else
+	{
+		rtde_control_ -> speedJ({0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, 2.5, 0.002);
+	}
 
 	pose_dbl_ = rtde_receive_ -> getTargetTCPPose();
 	angle_ = sqrt(pow(pose_dbl_[3],2) + pow(pose_dbl_[4],2) + pow(pose_dbl_[5],2));

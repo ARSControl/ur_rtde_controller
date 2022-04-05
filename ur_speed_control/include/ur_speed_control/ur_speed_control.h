@@ -50,6 +50,7 @@ class URSpeedControl {
         Eigen::Vector3d axis_;
         double angle_;
     	double max_acc_;
+        bool move_ = false;
 
         // ---- ROS - PUBLISHERS ---- //
         ros::Publisher pose_pub_;
