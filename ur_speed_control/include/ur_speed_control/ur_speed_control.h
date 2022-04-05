@@ -1,6 +1,8 @@
 #ifndef UR_SPEED_CONTROL_H
 #define UR_SPEED_CONTROL_H
 
+#include <signal.h>
+
 #include <ros/ros.h>
 
 #include <ur_rtde/rtde_control_interface.h>
@@ -64,7 +66,7 @@ class URSpeedControl {
         bool stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
 
         // ---- UR RTDE FUNCTIONS ---- //
-        void readRobotSafetyStatus ();
+        void readRobotSafetyStatus();
 
 };
 

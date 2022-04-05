@@ -43,7 +43,7 @@ URSpeedControl::URSpeedControl(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 URSpeedControl::~URSpeedControl()
 {
 
-	if (!rtde_control_ -> speedJ({0.0, 0.0 ,0.0 ,0.0 ,0.0, 0.0}, 2.5, 0.004)) {ROS_ERROR("ERROR: ROBOT NOT STOPPED");}
+	if (!rtde_control_ -> speedJ({0.0, 0.0 ,0.0 ,0.0 ,0.0, 0.0}, 2.5, 0.002)) {ROS_ERROR("ERROR: ROBOT NOT STOPPED");}
 	rtde_control_ -> disconnect();
 
 }
@@ -84,9 +84,9 @@ bool URSpeedControl::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs
 {
 	
 	// Command Zero Velocity
-	if (rtde_control_ -> speedJ({0.0, 0.0 ,0.0 ,0.0 ,0.0, 0.0}, max_acc_, 0.002)) res.success = true;
-	else res.success = false;
+	rtde_control_ -> stopL(2.0);
 
+	res.success = true;
 	return true;
 
 }
