@@ -43,7 +43,7 @@ URSpeedControl::URSpeedControl(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 URSpeedControl::~URSpeedControl()
 {
 
-	rtde_control_ -> stopL(2.0);
+	rtde_control_ -> speedStop(2.0);
 	rtde_control_ -> disconnect();
 
 }
@@ -85,8 +85,7 @@ bool URSpeedControl::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs
 {
 	
 	// Command Zero Velocity
-	rtde_control_ -> stopL(2.0);
-	ros::Duration(0.1).sleep();
+	rtde_control_ -> speedStop(2.0);
 	move_ = false;
 
 	res.success = true;
