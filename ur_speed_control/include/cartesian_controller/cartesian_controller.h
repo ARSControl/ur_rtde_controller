@@ -33,7 +33,7 @@ class CartesianController {
         // ---- PARAMETERS ---- //
         double k_ = 2.0;
         double max_linear_vel_ = 0.1;
-        double max_twist_vel_  = 0.1;
+        double max_angular_vel_  = 0.1;
         double movement_precision_ = 0.0001;
 
         // ---- GLOBAL VARIABLES ---- //

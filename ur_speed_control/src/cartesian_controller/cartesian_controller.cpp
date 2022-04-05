@@ -6,7 +6,7 @@ CartesianController::CartesianController(ros::NodeHandle &nh, ros::Rate ros_rate
 	// ---- LOAD PARAMETERS ---- //
 	if(!nh_.param<double>("/cartesian_controller/k", k_, 2.0)) {ROS_ERROR_STREAM("Failed To Get \"position_gain\" Param. Usinge Default: " << k_);}
 	if(!nh_.param<double>("/cartesian_controller/max_linear_vel", max_linear_vel_, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_linear_vel\" Param. Usinge Default: " << max_linear_vel_);}
-	if(!nh_.param<double>("/cartesian_controller/max_twist_vel", max_twist_vel_, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_twist_vel\" Param. Usinge Default: " << max_twist_vel_);}
+	if(!nh_.param<double>("/cartesian_controller/max_angular_vel", max_angular_vel_, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_angular_vel\" Param. Usinge Default: " << max_angular_vel_);}
 	if(!nh_.param<double>("/cartesian_controller/movement_precision", movement_precision_, 0.0001)) {ROS_ERROR_STREAM("Failed To Get \"movement_precision\" Param. Usinge Default: " << movement_precision_);}
 
   // ---- ROS - PUBLISHERS ---- //
@@ -36,7 +36,7 @@ CartesianController::CartesianController(ros::NodeHandle &nh, ros::Rate ros_rate
   std::cout << std::endl;
   ROS_INFO_STREAM("Position Gain k: " << k_);
   ROS_INFO_STREAM("Max Linear Velocity: " << max_linear_vel_);
-  ROS_INFO_STREAM("Max Angular Velocity: " << max_twist_vel_);
+  ROS_INFO_STREAM("Max Angular Velocity: " << max_angular_vel_);
   ROS_INFO_STREAM("Movement Precision: " << movement_precision_);
 
   std::cout << std::endl;
@@ -160,10 +160,8 @@ void CartesianController::spinner()
   velocity_ = k_ * error_;
 
   // Set Velocity Limits
-  for (int i = 0; i < 3; i++) {
-    if (fabs(velocity_(i, 0)) > max_linear_vel_) {velocity_(i, 0) = velocity_(i, 0) / fabs(velocity_(i, 0) + 1e-12) * max_linear_vel_;}
-    if (fabs(velocity_(i + 3, 0)) > max_twist_vel_) {velocity_(i + 3, 0) = velocity_(i + 3, 0) / fabs(velocity_(i + 3, 0) + 1e-12) * max_twist_vel_;}
-  }
+  if (velocity_.block<3,1>(0,0).norm() > max_linear_vel_) velocity_.block<3,1>(0,0) = velocity_.block<3,1>(0,0).normalized() * max_linear_vel_;
+  if (velocity_.block<3,1>(3,0).norm() > max_angular_vel_) velocity_.block<3,1>(3,0) = velocity_.block<3,1>(3,0).normalized() * max_angular_vel_;
 
   // Convert Eigen Matrix to Vector for Printing
   std::vector<double> error_vec_(error_.data(), error_.data() + error_.rows() * error_.cols());
