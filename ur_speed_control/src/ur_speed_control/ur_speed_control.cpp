@@ -168,7 +168,7 @@ void URSpeedControl::readRobotSafetyStatus ()
 void URSpeedControl::spinner()
 {
 	// Read and Publish Robot Status
-	readRobotSafetyStatus();
+	// readRobotSafetyStatus();
 
 	desired_twist_dbl_[0] = desired_twist_.twist.linear.x;
 	desired_twist_dbl_[1] = desired_twist_.twist.linear.y;
