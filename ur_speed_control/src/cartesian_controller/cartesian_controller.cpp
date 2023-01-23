@@ -145,7 +145,7 @@ void CartesianController::spinner()
   while (ros::ok() && !desired_pose_flag_)
   {
     
-    ROS_WARN_DELAYED_THROTTLE(2, "Waiting For Desired Robot Pose...");
+    ROS_WARN_DELAYED_THROTTLE(5, "Waiting For Desired Robot Pose...");
     ros::spinOnce();
     
     if (desired_pose_flag_) {std::cout << std::endl;}
