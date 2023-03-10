@@ -1,9 +1,0 @@
-bool FAST=False
-bool SLOW=True
-bool OPEN=False
-bool CLOSE=True
-
-bool movement
-bool velocity
----
-bool success

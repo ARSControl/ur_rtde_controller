@@ -1,0 +1,18 @@
+# Position, Speed, Force in Percentage (0-100)
+
+float64 position
+float64 speed
+float64 force
+
+---
+
+# Object Detection Status
+
+    # MOVING = 0                | Gripper is Opening or Closing
+    # STOPPED_OUTER_OBJECT = 1  | Outer Object Detected while Opening the Gripper
+    # STOPPED_INNER_OBJECT = 2  | Inner Object Detected while Closing the Gripper
+    # AT_DEST = 3               | Requested Target Position Reached - No Object Detected
+
+int32 status
+
+bool success
