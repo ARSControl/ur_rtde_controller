@@ -1,6 +1,0 @@
-# UR RTDE Library
-
-[submodule "ur_rtde"]
-	path = ur_rtde
-	url = https://gitlab.com/sdurobotics/ur_rtde.git
-	branch = master

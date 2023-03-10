@@ -6,29 +6,28 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 ## Dependancies ##
 
 * Eigen3
+* ur_rtde
 
 ## Installation ##
 
 * Clone the Repository inside the `catkin_ws`:
 
-        git clone https://davide_ferrari@bitbucket.org/davide_ferrari/ur_rtde_controller.git
-        cd ur_rtde_controller
-        git submodule update --init --recursive
+        cd ~/catkin_ws/src
+        git clone git@github.com:ARSControl/ur_rtde_controller.git
 
-* Build the RTDE Libraries
+* Install the RTDE Libraries
 
-        cd ur_rtde
-        mkdir build
-        cd build
-        cmake ..
-        make
+        sudo add-apt-repository ppa:sdurobotics/ur-rtde
+        sudo apt-get update
+        sudo apt install librtde librtde-dev
 
 * Build your workspace
 
+        cd ~/catkin_ws
         catkin_make
 
 ## Running ##
 
-* Launch Cartesian Controller
+* Launch RTDE Controller
   
-        roslaunch ur_speed_control cartesian_controller.launch
+        roslaunch ur_rtde_controller rtde_controller.launch
