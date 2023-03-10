@@ -17,6 +17,7 @@
 
 #include "ur_rtde_controller/RobotiQGripperControl.h"
 #include "ur_rtde_controller/RobotStatus.h"
+#include "ur_rtde_controller/CartesianPoint.h"
 
 #include <Eigen/Dense>
 
@@ -42,9 +43,7 @@ class RTDEController {
 
         // ---- GLOBAL VARIABLES ---- //
         trajectory_msgs::JointTrajectory desired_trajectory_;
-        trajectory_msgs::JointTrajectoryPoint desired_joint_goal_;
         bool new_trajectory_received_;
-        bool new_joint_goal_received_;
 
         // ---- UR RTDE LIBRARY ---- //
         ur_rtde::RTDEControlInterface* rtde_control_;
@@ -62,8 +61,10 @@ class RTDEController {
         // ---- ROS - SUBSCRIBERS & CALLBACKS ---- //
         ros::Subscriber trajectory_command_sub_;
         ros::Subscriber joint_goal_command_sub_;
+        ros::Subscriber cartesian_goal_command_sub_;
         void jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg);
         void jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg);
+        void cartesianGoalCallback(const ur_rtde_controller::CartesianPoint msg);
 
         // ---- ROS - SERVICE SERVERS & CALLBACKS ---- //
         ros::ServiceServer stop_robot_server_;

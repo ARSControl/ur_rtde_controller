@@ -26,8 +26,9 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	robot_status_pub_ = nh_.advertise<ur_rtde_controller::RobotStatus>("/ur_rtde/ur_safety_status", 1);
 
     // ROS - Subscribers
-	trajectory_command_sub_ = nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 1, &RTDEController::jointTrajectoryCallback, this);
-	joint_goal_command_sub_ = nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command", 1, &RTDEController::jointGoalCallback, this);
+	trajectory_command_sub_     = nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 1, &RTDEController::jointTrajectoryCallback, this);
+	joint_goal_command_sub_     = nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command", 1, &RTDEController::jointGoalCallback, this);
+	cartesian_goal_command_sub_ = nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command", 1, &RTDEController::cartesianGoalCallback, this);
 
 	// ROS - Service Servers
 	robotiq_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/command", &RTDEController::RobotiQGripperCallback, this);
@@ -57,8 +58,15 @@ void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTraject
 void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg)
 {
 
-	desired_joint_goal_ = msg;
-	new_joint_goal_received_ = true;
+	// Move to Joint Goal
+	rtde_control_ -> servoJ(msg.positions, 0.0, 0.0, msg.time_from_start.toSec(), 0.1, 100.0);
+
+}
+
+void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPoint msg)
+{
+	// Move to Linear Goal
+	rtde_control_ -> servoL(msg.cartesian_pose, 0.0, 0.0, msg.time_from_start.toSec(), 0.1, 100.0);
 
 }
 
@@ -233,24 +241,19 @@ void RTDEController::spinner()
 	publishJointState();
 	publishTCPPose();
 
-	if (new_joint_goal_received_)
-	{
-		// Move to Joint Goal (Asynchronous = True)
-		rtde_control_ -> moveJ(desired_joint_goal_.positions, true);
-		new_joint_goal_received_ = false;
-
-	}
-
 	// Move to New Trajectory Goal
-	else if (new_trajectory_received_)
+	if (new_trajectory_received_)
 	{
-		std::vector<double> next_point;
-		next_point.resize(6);
 
-		// Get Next Point from Trajectory
-		for(int i = 0; i < 6; i++) {next_point[i] = desired_trajectory_.points[0].positions[i];}
+		// Create Next Point
+		std::vector<std::vector<double>> next_point;
+		next_point.push_back(desired_trajectory_.points[0].positions);
+		next_point.push_back(desired_trajectory_.points[0].velocities);
+		next_point.push_back(desired_trajectory_.points[0].accelerations);
+		next_point.push_back(desired_trajectory_.points[0].effort);
 
-		rtde_control_ -> moveJ(next_point);
+		// Move to the First Trajectory Point
+		rtde_control_ -> moveJ(desired_trajectory_.points[0].positions);
 
 		// Erase Point from Trajectory
 		desired_trajectory_.points.erase(desired_trajectory_.points.begin());

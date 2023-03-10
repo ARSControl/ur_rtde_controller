@@ -19,6 +19,7 @@ find_package(catkin REQUIRED COMPONENTS
 add_message_files(
   FILES
   RobotStatus.msg
+  CartesianPoint.msg
 )
 
 add_service_files(
@@ -30,6 +31,7 @@ add_service_files(
 generate_messages(
   DEPENDENCIES
     std_msgs
+    geometry_msgs
     ${PROJECT_NAME}
 )
 
