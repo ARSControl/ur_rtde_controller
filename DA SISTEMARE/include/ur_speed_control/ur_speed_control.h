@@ -8,6 +8,7 @@
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>
 #include <ur_rtde/rtde_io_interface.h>
+#include <ur_rtde/robotiq_gripper.h>
 
 #include <geometry_msgs/TwistStamped.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -41,7 +42,8 @@ class URSpeedControl {
         ur_rtde::RTDEControlInterface* rtde_control_;
         ur_rtde::RTDEReceiveInterface* rtde_receive_;
         ur_rtde::RTDEIOInterface* rtde_io_;
-
+        ur_rtde::RobotiqGripper* gripper;
+        
         // ---- GLOBAL VARIABLES ---- //
         geometry_msgs::TwistStamped desired_twist_;
         geometry_msgs::PoseStamped pose_;

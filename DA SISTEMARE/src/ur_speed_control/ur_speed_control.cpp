@@ -11,6 +11,15 @@ URSpeedControl::URSpeedControl(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP);
 	rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ROBOT_IP);
 	rtde_io_ = new ur_rtde::RTDEIOInterface(ROBOT_IP);
+	
+	gripper = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, true);
+  	gripper -> connect();
+
+	// Test of move functionality with normalized values (0.0 - 1.0)
+	int status = gripper -> move(1, 1, 0, ur_rtde::RobotiqGripper::WAIT_FINISHED);
+	// printStatus(status);
+	status = gripper -> move(0, 1, 0, ur_rtde::RobotiqGripper::WAIT_FINISHED);
+	// printStatus(status);
 
     // ---- ROS - PUBLISHERS ---- //
 	pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/act_pose", 1);

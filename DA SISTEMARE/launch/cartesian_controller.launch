@@ -2,7 +2,7 @@
 
     <!-- Speed Controller - Agruments -->
     <arg name="max_acc" default="0.25"/>
-    <arg name="ROBOT_IP" default="192.168.2.30"/>
+    <arg name="ROBOT_IP" default="192.168.0.2"/>
 
     <!-- Cartesian Controller - Agruments -->
     <arg name="position_gain" default="2.0"/>
