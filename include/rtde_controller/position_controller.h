@@ -1,5 +1,5 @@
-#ifndef RTDE_CONTROLLER_H
-#define RTDE_CONTROLLER_H
+#ifndef POSITION_CONTROLLER_H
+#define POSITION_CONTROLLER_H
 
 #include <ros/ros.h>
 
@@ -78,4 +78,4 @@ class RTDEController {
 
 };
 
-#endif /* RTDE_CONTROLLER_H */
+#endif /* POSITION_CONTROLLER_H */

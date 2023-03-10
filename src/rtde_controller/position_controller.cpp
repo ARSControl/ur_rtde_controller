@@ -1,4 +1,4 @@
-#include "rtde_controller/rtde_controller.h"
+#include "rtde_controller/position_controller.h"
 
 RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh), ros_rate_(ros_rate)
 {

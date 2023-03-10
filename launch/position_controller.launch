@@ -4,8 +4,8 @@
     <arg name="ROBOT_IP"       default="192.168.0.2"/>
     <arg name="enable_gripper" default="False"/>
 
-    <!-- UR_RTDE - Speed Control -->
-    <node pkg="rtde_controller" type="rtde_controller" name="ur_rtde_controller" output="screen">
+    <!-- RTDE - Position Controller -->
+    <node pkg="rtde_controller" type="position_controller" name="ur_position_controller" output="screen">
         <param name="ROBOT_IP"       value="$(arg ROBOT_IP)"/>
         <param name="enable_gripper" value="$(arg enable_gripper)"/>
     </node>
