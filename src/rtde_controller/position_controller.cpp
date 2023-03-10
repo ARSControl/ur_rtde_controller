@@ -157,7 +157,6 @@ void RTDEController::publishTCPPose()
 
 }
 
-
 void RTDEController::readRobotSafetyStatus()
 {
 	/************************************************
@@ -240,6 +239,7 @@ void RTDEController::spinner()
 	// Publish JointState and TCPPose
 	publishJointState();
 	publishTCPPose();
+	readRobotSafetyStatus();
 
 	// Move to New Trajectory Goal
 	if (new_trajectory_received_)
