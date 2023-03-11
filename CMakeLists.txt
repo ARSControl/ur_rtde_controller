@@ -25,7 +25,9 @@ add_message_files(
 add_service_files(
   FILES
   RobotiQGripperControl.srv
-  # setDouble.srv
+  GetForwardKinematic.srv
+  GetInverseKinematic.srv
+  StartFreedriveMode.srv
 )
 
 generate_messages(
@@ -59,23 +61,3 @@ target_link_libraries(position_controller ${catkin_LIBRARIES} ur_rtde::rtde)
 add_executable(velocity_controller src/rtde_controller/velocity_controller.cpp)
 add_dependencies(velocity_controller ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 target_link_libraries(velocity_controller ${catkin_LIBRARIES} ur_rtde::rtde)
-
-# add_executable(ur_speed_control src/ur_speed_control/ur_speed_control.cpp src/ur_speed_control/ur_speed_control_node.cpp)
-# add_dependencies(ur_speed_control ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-# target_link_libraries(ur_speed_control ${catkin_LIBRARIES})
-
-# add_executable(ur_force_control src/ur_force_control/ur_force_control.cpp)
-# add_dependencies(ur_force_control ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-# target_link_libraries(ur_force_control ${catkin_LIBRARIES})
-
-# add_executable(ur_joint_position_control src/ur_joint_position_control/ur_joint_position_control.cpp)
-# add_dependencies(ur_joint_position_control ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-# target_link_libraries(ur_joint_position_control ${catkin_LIBRARIES})
-
-# add_executable(whole_body_admittance src/whole_body_admittance/whole_body_admittance.cpp)
-# add_dependencies(whole_body_admittance ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-# target_link_libraries(whole_body_admittance ${catkin_LIBRARIES})
-
-# add_executable(cartesian_controller src/cartesian_controller/cartesian_controller.cpp src/cartesian_controller/cartesian_controller_node.cpp)
-# add_dependencies(cartesian_controller ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-# target_link_libraries(cartesian_controller ${catkin_LIBRARIES})

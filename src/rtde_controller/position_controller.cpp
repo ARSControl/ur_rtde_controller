@@ -21,19 +21,24 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	}
 
     // ROS - Publishers
-	joint_state_pub_  		 = nh_.advertise<sensor_msgs::JointState>("/ur_rtde/joint_state", 1);
-	tcp_pose_pub_     		 = nh_.advertise<geometry_msgs::PoseStamped>("/ur_rtde/cartesian_pose", 1);
-	robot_status_pub_ 		 = nh_.advertise<ur_rtde_controller::RobotStatus>("/ur_rtde/ur_safety_status", 1);
+	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState>("/ur_rtde/joint_state", 1);
+	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::PoseStamped>("/ur_rtde/cartesian_pose", 1);
+	robot_status_pub_		 = nh_.advertise<ur_rtde_controller::RobotStatus>("/ur_rtde/ur_safety_status", 1);
 	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>("/ur_rtde/trajectory_executed", 1);
 
     // ROS - Subscribers
-	trajectory_command_sub_     = nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 1, &RTDEController::jointTrajectoryCallback, this);
-	joint_goal_command_sub_     = nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command", 1, &RTDEController::jointGoalCallback, this);
-	cartesian_goal_command_sub_ = nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command", 1, &RTDEController::cartesianGoalCallback, this);
+	trajectory_command_sub_		= nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 1, &RTDEController::jointTrajectoryCallback, this);
+	joint_goal_command_sub_		= nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command", 1, &RTDEController::jointGoalCallback, this);
+	cartesian_goal_command_sub_	= nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command", 1, &RTDEController::cartesianGoalCallback, this);
 
 	// ROS - Service Servers
-	robotiq_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/command", &RTDEController::RobotiQGripperCallback, this);
-	stop_robot_server_ = nh_.advertiseService("/ur_rtde/controllers/stop_robot", &RTDEController::stopRobotCallback, this);
+	robotiq_gripper_server_		= nh_.advertiseService("/ur_rtde/robotiq_gripper/command", &RTDEController::RobotiQGripperCallback, this);
+	stop_robot_server_			= nh_.advertiseService("/ur_rtde/controllers/stop_robot", &RTDEController::stopRobotCallback, this);
+	zeroFT_sensor_server_		= nh_.advertiseService("/ur_rtde/zeroFTSensor", &RTDEController::zeroFTSensorCallback, this);
+    get_FK_server_				= nh_.advertiseService("/ur_rtde/getFK", &RTDEController::GetForwardKinematicCallback, this);
+    get_IK_server_				= nh_.advertiseService("/ur_rtde/getIK", &RTDEController::GetInverseKinematicCallback, this);
+    start_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/start", &RTDEController::startFreedriveModeCallback, this);
+    stop_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/stop",  &RTDEController::stopFreedriveModeCallback, this);
 
 	ros::Duration(1).sleep();
 	ROS_INFO("UR RTDE Controller - Initialized");
@@ -115,6 +120,51 @@ bool RTDEController::RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperCo
 	res.success = true;
 	return res.success;
 
+}
+
+bool RTDEController::zeroFTSensorCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+	// Reset Force-Torque Sensor
+	res.success = rtde_control_ -> zeroFtSensor();
+
+	return res.success;
+}
+
+bool RTDEController::GetForwardKinematicCallback(ur_rtde_controller::GetForwardKinematic::Request  &req, ur_rtde_controller::GetForwardKinematic::Response &res)
+{
+	// Compute Forward Kinematic
+	res.tcp_position = rtde_control_ -> getForwardKinematics(req.joint_position);
+	res.success = true;
+
+	return res.success;
+}
+
+bool RTDEController::GetInverseKinematicCallback(ur_rtde_controller::GetInverseKinematic::Request  &req, ur_rtde_controller::GetInverseKinematic::Response &res)
+{
+	// Compute Inverse Kinematic
+	res.joint_position = rtde_control_ -> getInverseKinematics(req.tcp_position);
+	res.success = true;
+
+	return res.success;
+}
+
+bool RTDEController::startFreedriveModeCallback(ur_rtde_controller::StartFreedriveMode::Request  &req, ur_rtde_controller::StartFreedriveMode::Response &res)
+{
+	// freeAxes = [1,0,0,0,0,0] 	-> The robot is compliant in the x direction relative to the feature.
+	// freeAxes: A 6 dimensional vector that contains 0’s and 1’s, these indicates in which axes movement is allowed. The first three values represents the cartesian directions along x, y, z, and the last three defines the rotation axis, rx, ry, rz. All relative to the selected feature
+
+	// Start FreeDrive Mode
+	res.success = rtde_control_ -> freedriveMode(req.free_axes);
+
+	return res.success;
+}
+
+bool RTDEController::stopFreedriveModeCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+	// Exit from FreeDrive Mode
+	res.success = rtde_control_ -> endFreedriveMode();
+
+	return res.success;
 }
 
 void RTDEController::publishJointState()
