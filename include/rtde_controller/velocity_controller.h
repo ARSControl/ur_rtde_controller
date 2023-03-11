@@ -44,6 +44,8 @@ class RTDEController {
         // ---- PARAMETERS ---- //
     	  std::string ROBOT_IP;
         bool enable_gripper;
+        double max_linear_vel_;
+        double max_angular_vel_;
         double max_acc_;
 
         // ---- GLOBAL VARIABLES ---- //

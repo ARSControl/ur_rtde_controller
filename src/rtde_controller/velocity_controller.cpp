@@ -6,6 +6,8 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	// Load Parameters
 	if(!nh_.param<std::string>("/rtde_controller/ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
 	if(!nh_.param<bool>("/rtde_controller/enable_gripper", enable_gripper, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper);}
+	if(!nh_.param<double>("/rtde_controller/max_linear_vel", max_linear_vel_, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_linear_vel\" Param. Using Default: " << max_linear_vel_);}
+	if(!nh_.param<double>("/rtde_controller/max_angular_vel", max_angular_vel_, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_angular_vel\" Param. Using Default: " << max_angular_vel_);}
 	if(!nh_.param<double>("/rtde_controller/max_acc", max_acc_, 0.25)) {ROS_ERROR_STREAM("Failed To Get \"max_acc\" Param. Using Default: " << max_acc_);}
 
 	// RTDE Library
@@ -435,6 +437,10 @@ void RTDEController::spinner()
 		// Compute Velocity Setpoint
   		Eigen::VectorXd velocity_setpoint = - 2.0 * position_error;
 
+		// Set Velocity Limits
+		if (velocity_setpoint.head<3>().norm() > max_linear_vel_)  velocity_setpoint.head<3>() = velocity_setpoint.head<3>().normalized() * max_linear_vel_;
+		if (velocity_setpoint.tail<3>().norm() > max_angular_vel_) velocity_setpoint.tail<3>() = velocity_setpoint.tail<3>().normalized() * max_angular_vel_;
+
 		// Create Desired Velocity Vector
 		std::vector<double> desired_velocity(velocity_setpoint.data(), velocity_setpoint.data() + velocity_setpoint.size());
 
@@ -460,6 +466,10 @@ void RTDEController::spinner()
 
 		// Compute Velocity Setpoint
   		Eigen::VectorXd velocity_setpoint = - 2.0 * position_error;
+
+		// Set Velocity Limits
+		if (velocity_setpoint.head<3>().norm() > max_linear_vel_)  velocity_setpoint.head<3>() = velocity_setpoint.head<3>().normalized() * max_linear_vel_;
+		if (velocity_setpoint.tail<3>().norm() > max_angular_vel_) velocity_setpoint.tail<3>() = velocity_setpoint.tail<3>().normalized() * max_angular_vel_;
 
 		// Create Desired Velocity Vector
 		std::vector<double> desired_velocity(velocity_setpoint.data(), velocity_setpoint.data() + velocity_setpoint.size());
