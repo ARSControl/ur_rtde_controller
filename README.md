@@ -1,9 +1,9 @@
-# UR_RTDE Controller #
+# UR_RTDE Controllers #
 
-Controllers for the UR10e using the RTDE Libreries
+Controllers for the UR10e using the RTDE Libraries
 https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 
-## Dependancies ##
+## Dependencies ##
 
 * Eigen3
 * ur_rtde
@@ -30,4 +30,5 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 
 * Launch RTDE Controller
   
-        roslaunch ur_rtde_controller rtde_controller.launch
+        roslaunch ur_rtde_controller position_controller.launch
+        roslaunch ur_rtde_controller velocity_controller.launch
