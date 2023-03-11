@@ -12,6 +12,7 @@
 #include <trajectory_msgs/JointTrajectoryPoint.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <sensor_msgs/JointState.h>
+#include <std_msgs/Bool.h>
 
 #include <std_srvs/Trigger.h>
 
@@ -43,7 +44,7 @@ class RTDEController {
 
         // ---- GLOBAL VARIABLES ---- //
         trajectory_msgs::JointTrajectory desired_trajectory_;
-        bool new_trajectory_received_;
+        bool new_trajectory_received_ = false;
 
         // ---- UR RTDE LIBRARY ---- //
         ur_rtde::RTDEControlInterface* rtde_control_;
@@ -57,6 +58,7 @@ class RTDEController {
         ros::Publisher joint_state_pub_;
         ros::Publisher tcp_pose_pub_;
         ros::Publisher robot_status_pub_;
+        ros::Publisher trajectory_executed_pub_;
 
         // ---- ROS - SUBSCRIBERS & CALLBACKS ---- //
         ros::Subscriber trajectory_command_sub_;
@@ -75,6 +77,7 @@ class RTDEController {
         // ---- UR RTDE FUNCTIONS ---- //
         void publishJointState();
         void publishTCPPose();
+        void publishTrajectoryExecuted();
         void readRobotSafetyStatus();
 
 };

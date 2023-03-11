@@ -21,9 +21,10 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	}
 
     // ROS - Publishers
-	joint_state_pub_  = nh_.advertise<sensor_msgs::JointState>("/ur_rtde/joint_state", 1);
-	tcp_pose_pub_     = nh_.advertise<geometry_msgs::PoseStamped>("/ur_rtde/cartesian_pose", 1);
-	robot_status_pub_ = nh_.advertise<ur_rtde_controller::RobotStatus>("/ur_rtde/ur_safety_status", 1);
+	joint_state_pub_  		 = nh_.advertise<sensor_msgs::JointState>("/ur_rtde/joint_state", 1);
+	tcp_pose_pub_     		 = nh_.advertise<geometry_msgs::PoseStamped>("/ur_rtde/cartesian_pose", 1);
+	robot_status_pub_ 		 = nh_.advertise<ur_rtde_controller::RobotStatus>("/ur_rtde/ur_safety_status", 1);
+	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>("/ur_rtde/trajectory_executed", 1);
 
     // ROS - Subscribers
 	trajectory_command_sub_     = nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 1, &RTDEController::jointTrajectoryCallback, this);
@@ -61,12 +62,18 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoi
 	// Move to Joint Goal
 	rtde_control_ -> servoJ(msg.positions, 0.0, 0.0, msg.time_from_start.toSec(), 0.1, 100.0);
 
+	// Publish Trajectory Executed
+	publishTrajectoryExecuted();
+
 }
 
 void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPoint msg)
 {
 	// Move to Linear Goal
 	rtde_control_ -> servoL(msg.cartesian_pose, 0.0, 0.0, msg.time_from_start.toSec(), 0.1, 100.0);
+
+	// Publish Trajectory Executed
+	publishTrajectoryExecuted();
 
 }
 
@@ -75,6 +82,9 @@ bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs
 
 	// Stop Robot in Joint Space
 	rtde_control_ -> stopJ(2.0);
+
+	// Reset Booleans
+	new_trajectory_received_ = false;
 
 	res.success = true;
 	return res.success;
@@ -133,7 +143,7 @@ void RTDEController::publishJointState()
 void RTDEController::publishTCPPose()
 {
 
-	geometry_msgs::PoseStamped joint_pose;
+	geometry_msgs::PoseStamped cartesian_pose;
 
 	// Read Joint Position
 	std::vector<double> tcp_pose = rtde_receive_ -> getActualTCPPose();
@@ -144,16 +154,26 @@ void RTDEController::publishTCPPose()
 	axis = axis.normalized();
 
 	// Write TCP Pose in PoseStamped Message
-	joint_pose.pose.position.x = tcp_pose[0];
-	joint_pose.pose.position.y = tcp_pose[1];
-	joint_pose.pose.position.z = tcp_pose[2];
-	joint_pose.pose.orientation.x = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).x();
-	joint_pose.pose.orientation.y = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).y();
-	joint_pose.pose.orientation.z = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).z();
-	joint_pose.pose.orientation.w = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).w();
+	cartesian_pose.pose.position.x = tcp_pose[0];
+	cartesian_pose.pose.position.y = tcp_pose[1];
+	cartesian_pose.pose.position.z = tcp_pose[2];
+	cartesian_pose.pose.orientation.x = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).x();
+	cartesian_pose.pose.orientation.y = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).y();
+	cartesian_pose.pose.orientation.z = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).z();
+	cartesian_pose.pose.orientation.w = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).w();
 
 	// Publish TCP Pose
-	tcp_pose_pub_.publish(joint_pose);
+	tcp_pose_pub_.publish(cartesian_pose);
+
+}
+
+void RTDEController::publishTrajectoryExecuted()
+{
+
+	// Publish Trajectory Executed Message
+	std_msgs::Bool trajectory_executed;
+	trajectory_executed.data = true;
+	trajectory_executed_pub_.publish(trajectory_executed);
 
 }
 
@@ -259,7 +279,18 @@ void RTDEController::spinner()
 		desired_trajectory_.points.erase(desired_trajectory_.points.begin());
 
 		// Check for Trajectory Ending
-		if (desired_trajectory_.points.size() == 0) {new_trajectory_received_ = false;}
+		if (desired_trajectory_.points.size() == 0) 
+		{
+
+			new_trajectory_received_ = false;
+
+			// Publish Trajectory Executed
+			publishTrajectoryExecuted();
+
+			// Stop Robot
+			rtde_control_ -> stopJ(2.0);
+
+		}
 
 	}
 
