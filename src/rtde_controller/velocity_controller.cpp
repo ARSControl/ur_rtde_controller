@@ -435,7 +435,7 @@ void RTDEController::spinner()
 									   - Eigen::VectorXd::Map(actual_joint_position_.data(), actual_joint_position_.size());
 
 		// Compute Velocity Setpoint
-  		Eigen::VectorXd velocity_setpoint = - 2.0 * position_error;
+  		Eigen::VectorXd velocity_setpoint = 2.0 * position_error;
 
 		// Set Velocity Limits
 		if (velocity_setpoint.head<3>().norm() > max_linear_vel_)  velocity_setpoint.head<3>() = velocity_setpoint.head<3>().normalized() * max_linear_vel_;
