@@ -1,0 +1,15 @@
+<launch>
+
+    <!-- Robot Agruments -->
+    <arg name="ROBOT_IP"       default="192.168.0.2"/>
+    <arg name="enable_gripper" default="False"/>
+    <arg name="max_acc"        default=0.25/>
+
+    <!-- RTDE - Velocity Controller -->
+    <node pkg="rtde_controller" type="velocity_controller" name="ur_velocity_controller" output="screen">
+        <param name="ROBOT_IP"       value="$(arg ROBOT_IP)"/>
+        <param name="enable_gripper" value="$(arg enable_gripper)"/>
+        <param name="max_acc"        value="$(arg max_acc)"/>
+    </node>
+
+</launch>

@@ -50,10 +50,15 @@ include_directories(
   ${EIGEN3_INCLUDE_DIR}
 )
 
-# RTDE Controller
+# Position Controller
 add_executable(position_controller src/rtde_controller/position_controller.cpp)
 add_dependencies(position_controller ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 target_link_libraries(position_controller ${catkin_LIBRARIES} ur_rtde::rtde)
+
+# Velocity Controller
+add_executable(velocity_controller src/rtde_controller/velocity_controller.cpp)
+add_dependencies(velocity_controller ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+target_link_libraries(velocity_controller ${catkin_LIBRARIES} ur_rtde::rtde)
 
 # add_executable(ur_speed_control src/ur_speed_control/ur_speed_control.cpp src/ur_speed_control/ur_speed_control_node.cpp)
 # add_dependencies(ur_speed_control ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
