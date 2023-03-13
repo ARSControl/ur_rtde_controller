@@ -10,7 +10,7 @@
 
 #include <trajectory_msgs/JointTrajectory.h>
 #include <trajectory_msgs/JointTrajectoryPoint.h>
-#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Pose.h>
 #include <sensor_msgs/JointState.h>
 #include <std_msgs/Bool.h>
 
@@ -46,6 +46,8 @@ class RTDEController {
         bool enable_gripper;
 
         // ---- GLOBAL VARIABLES ---- //
+        std::vector<double> actual_joint_position_;
+	      geometry_msgs::Pose actual_cartesian_pose_;
         trajectory_msgs::JointTrajectory desired_trajectory_;
         bool new_trajectory_received_ = false;
 

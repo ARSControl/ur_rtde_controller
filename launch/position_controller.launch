@@ -5,7 +5,7 @@
     <arg name="enable_gripper" default="False"/>
 
     <!-- RTDE - Position Controller -->
-    <node pkg="rtde_controller" type="position_controller" name="ur_position_controller" output="screen">
+    <node pkg="ur_rtde_controller" type="position_controller" name="ur_position_controller" output="screen">
         <param name="ROBOT_IP"       value="$(arg ROBOT_IP)"/>
         <param name="enable_gripper" value="$(arg enable_gripper)"/>
     </node>

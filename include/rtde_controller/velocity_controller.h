@@ -10,7 +10,7 @@
 
 #include <trajectory_msgs/JointTrajectory.h>
 #include <trajectory_msgs/JointTrajectoryPoint.h>
-#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Pose.h>
 #include <geometry_msgs/Twist.h>
 #include <sensor_msgs/JointState.h>
 #include <std_msgs/Bool.h>
@@ -51,7 +51,7 @@ class RTDEController {
         // ---- GLOBAL VARIABLES ---- //
         std::vector<double> actual_joint_position_;
         std::vector<double> actual_joint_velocity_;
-	      geometry_msgs::PoseStamped actual_cartesian_pose_;
+	      geometry_msgs::Pose actual_cartesian_pose_;
         trajectory_msgs::JointTrajectory desired_trajectory_;
         std::vector<double> desired_joint_pose_;
 	      Eigen::Matrix<double, 4, 4> desired_cartesian_pose_ = Eigen::Matrix<double, 4, 4>::Identity();
@@ -83,7 +83,7 @@ class RTDEController {
         void cartesianVelocityCallback(const geometry_msgs::Twist msg);
         void jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg);
         void jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg);
-        void cartesianGoalCallback(const geometry_msgs::PoseStamped msg);
+        void cartesianGoalCallback(const geometry_msgs::Pose msg);
 
         // ---- ROS - SERVICE SERVERS & CALLBACKS ---- //
         ros::ServiceServer stop_robot_server_;
@@ -108,7 +108,7 @@ class RTDEController {
         void readRobotSafetyStatus();
 
         // ---- EIGEN FUNCTIONS ---- //
-        Eigen::Matrix<double, 4, 4> pose2eigen(geometry_msgs::PoseStamped pose);
+        Eigen::Matrix<double, 4, 4> pose2eigen(geometry_msgs::Pose pose);
         Eigen::VectorXd computePoseError(Eigen::Matrix<double, 4, 4> T_des, Eigen::Matrix<double, 4, 4> T);
         bool isPoseReached(Eigen::VectorXd position_error, double movement_precision);
 

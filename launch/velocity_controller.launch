@@ -8,7 +8,7 @@
     <arg name="max_acc"         default=0.25/>
 
     <!-- RTDE - Velocity Controller -->
-    <node pkg="rtde_controller" type="velocity_controller" name="ur_velocity_controller" output="screen">
+    <node pkg="ur_rtde_controller" type="velocity_controller" name="ur_velocity_controller" output="screen">
         <param name="ROBOT_IP"        value="$(arg ROBOT_IP)"/>
         <param name="enable_gripper"  value="$(arg enable_gripper)"/>
         <param name="max_linear_vel"  value="$(arg max_linear_vel)"/>

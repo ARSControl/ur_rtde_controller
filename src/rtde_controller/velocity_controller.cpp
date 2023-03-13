@@ -4,11 +4,11 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 {
 
 	// Load Parameters
-	if(!nh_.param<std::string>("/rtde_controller/ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
-	if(!nh_.param<bool>("/rtde_controller/enable_gripper", enable_gripper, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper);}
-	if(!nh_.param<double>("/rtde_controller/max_linear_vel", max_linear_vel_, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_linear_vel\" Param. Using Default: " << max_linear_vel_);}
-	if(!nh_.param<double>("/rtde_controller/max_angular_vel", max_angular_vel_, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_angular_vel\" Param. Using Default: " << max_angular_vel_);}
-	if(!nh_.param<double>("/rtde_controller/max_acc", max_acc_, 0.25)) {ROS_ERROR_STREAM("Failed To Get \"max_acc\" Param. Using Default: " << max_acc_);}
+	if(!nh_.param<std::string>("/ur_velocity_controller/ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
+	if(!nh_.param<bool>("/ur_velocity_controller/enable_gripper", enable_gripper, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper);}
+	if(!nh_.param<double>("/ur_velocity_controller/max_linear_vel", max_linear_vel_, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_linear_vel\" Param. Using Default: " << max_linear_vel_);}
+	if(!nh_.param<double>("/ur_velocity_controller/max_angular_vel", max_angular_vel_, 0.1)) {ROS_ERROR_STREAM("Failed To Get \"max_angular_vel\" Param. Using Default: " << max_angular_vel_);}
+	if(!nh_.param<double>("/ur_velocity_controller/max_acc", max_acc_, 0.25)) {ROS_ERROR_STREAM("Failed To Get \"max_acc\" Param. Using Default: " << max_acc_);}
 
 	// RTDE Library
 	rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP);
@@ -25,7 +25,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 
     // ROS - Publishers
 	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState>("/ur_rtde/joint_state", 1);
-	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::PoseStamped>("/ur_rtde/cartesian_pose", 1);
+	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::Pose>("/ur_rtde/cartesian_pose", 1);
 	robot_status_pub_		 = nh_.advertise<ur_rtde_controller::RobotStatus>("/ur_rtde/ur_safety_status", 1);
 	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>("/ur_rtde/trajectory_executed", 1);
 
@@ -101,7 +101,7 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoi
 
 }
 
-void RTDEController::cartesianGoalCallback(const geometry_msgs::PoseStamped msg)
+void RTDEController::cartesianGoalCallback(const geometry_msgs::Pose msg)
 {
 	// Convert Received New Pose to Eigen Vector
 	desired_cartesian_pose_ = pose2eigen(msg);
@@ -231,14 +231,14 @@ void RTDEController::publishTCPPose()
 	Eigen::Vector3d axis(tcp_pose[3], tcp_pose[4], tcp_pose[5]);
 	axis = axis.normalized();
 
-	// Write TCP Pose in PoseStamped Message
-	actual_cartesian_pose_.pose.position.x = tcp_pose[0];
-	actual_cartesian_pose_.pose.position.y = tcp_pose[1];
-	actual_cartesian_pose_.pose.position.z = tcp_pose[2];
-	actual_cartesian_pose_.pose.orientation.x = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).x();
-	actual_cartesian_pose_.pose.orientation.y = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).y();
-	actual_cartesian_pose_.pose.orientation.z = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).z();
-	actual_cartesian_pose_.pose.orientation.w = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).w();
+	// Write TCP Pose in Pose Message
+	actual_cartesian_pose_.position.x = tcp_pose[0];
+	actual_cartesian_pose_.position.y = tcp_pose[1];
+	actual_cartesian_pose_.position.z = tcp_pose[2];
+	actual_cartesian_pose_.orientation.x = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).x();
+	actual_cartesian_pose_.orientation.y = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).y();
+	actual_cartesian_pose_.orientation.z = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).z();
+	actual_cartesian_pose_.orientation.w = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).w();
 
 	// Publish TCP Pose
 	tcp_pose_pub_.publish(actual_cartesian_pose_);
@@ -329,17 +329,17 @@ void RTDEController::readRobotSafetyStatus()
 
 }
 
-Eigen::Matrix<double, 4, 4> RTDEController::pose2eigen(geometry_msgs::PoseStamped pose)
+Eigen::Matrix<double, 4, 4> RTDEController::pose2eigen(geometry_msgs::Pose pose)
 {
 
 	Eigen::Matrix<double, 4, 4> T = Eigen::Matrix<double, 4, 4>::Identity();
 
-	T(0, 3) = pose.pose.position.x;
-	T(1, 3) = pose.pose.position.y;
-	T(2, 3) = pose.pose.position.z;
+	T(0, 3) = pose.position.x;
+	T(1, 3) = pose.position.y;
+	T(2, 3) = pose.position.z;
 
-	Eigen::Quaterniond q(pose.pose.orientation.w, pose.pose.orientation.x,
-    	                 pose.pose.orientation.y, pose.pose.orientation.z);
+	Eigen::Quaterniond q(pose.orientation.w, pose.orientation.x,
+    	                 pose.orientation.y, pose.orientation.z);
 
 	T.block<3, 3>(0, 0) = q.normalized().toRotationMatrix();
 
