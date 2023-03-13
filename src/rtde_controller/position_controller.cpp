@@ -4,8 +4,8 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 {
 
 	// Load Parameters
-	if(!nh_.param<std::string>("/rtde_controller/ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
-	if(!nh_.param<bool>("/rtde_controller/enable_gripper", enable_gripper, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper);}
+	if(!nh_.param<std::string>("/ur_position_controller/ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
+	if(!nh_.param<bool>("/ur_position_controller/enable_gripper", enable_gripper, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper);}
 
 	// RTDE Library
 	rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP);
@@ -22,7 +22,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 
     // ROS - Publishers
 	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState>("/ur_rtde/joint_state", 1);
-	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::PoseStamped>("/ur_rtde/cartesian_pose", 1);
+	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::Pose>("/ur_rtde/cartesian_pose", 1);
 	robot_status_pub_		 = nh_.advertise<ur_rtde_controller::RobotStatus>("/ur_rtde/ur_safety_status", 1);
 	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>("/ur_rtde/trajectory_executed", 1);
 
@@ -64,8 +64,15 @@ void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTraject
 void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg)
 {
 
+	// Get Desired and Actual Joint Pose
+	Eigen::VectorXd desired_pose = Eigen::VectorXd::Map(msg.positions.data(), msg.positions.size());
+	Eigen::VectorXd actual_pose  = Eigen::VectorXd::Map(actual_joint_position_.data(), actual_joint_position_.size());
+
+	// Compute Velocity of Farthest Joint
+	double desired_velocity = (desired_pose - actual_pose).array().abs().maxCoeff() / msg.time_from_start.toSec();
+
 	// Move to Joint Goal
-	rtde_control_ -> servoJ(msg.positions, 0.0, 0.0, msg.time_from_start.toSec(), 0.1, 100.0);
+	rtde_control_ -> moveJ(msg.positions, desired_velocity);
 
 	// Publish Trajectory Executed
 	publishTrajectoryExecuted();
@@ -74,11 +81,7 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoi
 
 void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPoint msg)
 {
-	// Move to Linear Goal
-	rtde_control_ -> servoL(msg.cartesian_pose, 0.0, 0.0, msg.time_from_start.toSec(), 0.1, 100.0);
 
-	// Publish Trajectory Executed
-	publishTrajectoryExecuted();
 
 }
 
@@ -175,13 +178,13 @@ void RTDEController::publishJointState()
 	joint_state.velocity.resize(6);
 
 	// Read Joint Position and Velocity
-	std::vector<double> joint_position = rtde_receive_ -> getActualQ();
+	actual_joint_position_ = rtde_receive_ -> getActualQ();
 	std::vector<double> joint_velocity = rtde_receive_ -> getActualQd();
 
 	// Write Joint Position and Velocity in JointState Message
 	for(int i = 0; i < 6; i++) 
 	{
-		joint_state.position[i] = joint_position[i];
+		joint_state.position[i] = actual_joint_position_[i];
 		joint_state.velocity[i] = joint_velocity[i];
 	}
 
@@ -193,8 +196,6 @@ void RTDEController::publishJointState()
 void RTDEController::publishTCPPose()
 {
 
-	geometry_msgs::PoseStamped cartesian_pose;
-
 	// Read Joint Position
 	std::vector<double> tcp_pose = rtde_receive_ -> getActualTCPPose();
 
@@ -203,17 +204,17 @@ void RTDEController::publishTCPPose()
 	Eigen::Vector3d axis(tcp_pose[3], tcp_pose[4], tcp_pose[5]);
 	axis = axis.normalized();
 
-	// Write TCP Pose in PoseStamped Message
-	cartesian_pose.pose.position.x = tcp_pose[0];
-	cartesian_pose.pose.position.y = tcp_pose[1];
-	cartesian_pose.pose.position.z = tcp_pose[2];
-	cartesian_pose.pose.orientation.x = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).x();
-	cartesian_pose.pose.orientation.y = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).y();
-	cartesian_pose.pose.orientation.z = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).z();
-	cartesian_pose.pose.orientation.w = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).w();
+	// Write TCP Pose in Pose Message
+	actual_cartesian_pose_.position.x = tcp_pose[0];
+	actual_cartesian_pose_.position.y = tcp_pose[1];
+	actual_cartesian_pose_.position.z = tcp_pose[2];
+	actual_cartesian_pose_.orientation.x = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).x();
+	actual_cartesian_pose_.orientation.y = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).y();
+	actual_cartesian_pose_.orientation.z = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).z();
+	actual_cartesian_pose_.orientation.w = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).w();
 
 	// Publish TCP Pose
-	tcp_pose_pub_.publish(cartesian_pose);
+	tcp_pose_pub_.publish(actual_cartesian_pose_);
 
 }
 
