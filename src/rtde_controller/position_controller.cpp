@@ -21,7 +21,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	}
 
     // ROS - Publishers
-	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState>("/ur_rtde/joint_state", 1);
+	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState>("/joint_states", 1);
 	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::Pose>("/ur_rtde/cartesian_pose", 1);
 	robot_status_pub_		 = nh_.advertise<ur_rtde_controller::RobotStatus>("/ur_rtde/ur_safety_status", 1);
 	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>("/ur_rtde/trajectory_executed", 1);
@@ -55,7 +55,8 @@ RTDEController::~RTDEController()
 
 void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg)
 {
-
+	//https://gitlab.com/sdurobotics/ur_rtde/-/blob/master/src/rtde_control_interface.cpp
+	// rtde_control_ -> movePath
 	desired_trajectory_ = msg;
 	new_trajectory_received_ = true;
 
@@ -82,6 +83,28 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoi
 void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPoint msg)
 {
 
+	// Create a Quaternion from Pose Orientation
+	Eigen::Quaterniond quaternion(msg.cartesian_pose.orientation.w, msg.cartesian_pose.orientation.x, msg.cartesian_pose.orientation.y, msg.cartesian_pose.orientation.z);
+
+    // Convert from Quaternion to Euler Angles
+    Eigen::Vector3d axis = Eigen::AngleAxisd(quaternion).axis();
+    double angle = Eigen::AngleAxisd(quaternion).angle();
+	Eigen::Vector3d euler_orientation = axis * angle;
+
+	// Create Desired Pose Message
+	std::vector<double> desired_pose;
+	desired_pose.push_back(msg.cartesian_pose.position.x);
+	desired_pose.push_back(msg.cartesian_pose.position.y);
+	desired_pose.push_back(msg.cartesian_pose.position.z);
+	desired_pose.push_back(euler_orientation[0]);
+	desired_pose.push_back(euler_orientation[1]);
+	desired_pose.push_back(euler_orientation[2]);
+
+	// Move to Linear Goal
+	rtde_control_ -> moveL(desired_pose, msg.velocity);
+
+	// Publish Trajectory Executed
+	publishTrajectoryExecuted();
 
 }
 
@@ -204,14 +227,17 @@ void RTDEController::publishTCPPose()
 	Eigen::Vector3d axis(tcp_pose[3], tcp_pose[4], tcp_pose[5]);
 	axis = axis.normalized();
 
+	// Convert Euler to Quaternion
+	Eigen::Quaterniond quaternion(Eigen::AngleAxisd(angle, axis));
+
 	// Write TCP Pose in Pose Message
 	actual_cartesian_pose_.position.x = tcp_pose[0];
 	actual_cartesian_pose_.position.y = tcp_pose[1];
 	actual_cartesian_pose_.position.z = tcp_pose[2];
-	actual_cartesian_pose_.orientation.x = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).x();
-	actual_cartesian_pose_.orientation.y = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).y();
-	actual_cartesian_pose_.orientation.z = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).z();
-	actual_cartesian_pose_.orientation.w = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).w();
+	actual_cartesian_pose_.orientation.x = quaternion.x();
+	actual_cartesian_pose_.orientation.y = quaternion.y();
+	actual_cartesian_pose_.orientation.z = quaternion.z();
+	actual_cartesian_pose_.orientation.w = quaternion.w();
 
 	// Publish TCP Pose
 	tcp_pose_pub_.publish(actual_cartesian_pose_);
@@ -323,7 +349,7 @@ void RTDEController::spinner()
 		next_point.push_back(desired_trajectory_.points[0].accelerations);
 		next_point.push_back(desired_trajectory_.points[0].effort);
 
-		// Move to the First Trajectory Point
+		// TODO: Move to the First Trajectory Point
 		rtde_control_ -> moveJ(desired_trajectory_.points[0].positions);
 
 		// Erase Point from Trajectory
