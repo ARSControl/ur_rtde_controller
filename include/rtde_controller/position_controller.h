@@ -11,6 +11,7 @@
 #include <trajectory_msgs/JointTrajectory.h>
 #include <trajectory_msgs/JointTrajectoryPoint.h>
 #include <geometry_msgs/Pose.h>
+#include <geometry_msgs/Wrench.h>
 #include <sensor_msgs/JointState.h>
 #include <std_msgs/Bool.h>
 
@@ -62,6 +63,7 @@ class RTDEController {
         // ---- ROS - PUBLISHERS ---- //
         ros::Publisher joint_state_pub_;
         ros::Publisher tcp_pose_pub_;
+        ros::Publisher ft_sensor_pub_;
         ros::Publisher robot_status_pub_;
         ros::Publisher trajectory_executed_pub_;
 
@@ -92,6 +94,7 @@ class RTDEController {
         // ---- UR RTDE FUNCTIONS ---- //
         void publishJointState();
         void publishTCPPose();
+        void publishFTSensor();
         void publishTrajectoryExecuted();
         void readRobotSafetyStatus();
 

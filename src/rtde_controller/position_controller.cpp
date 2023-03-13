@@ -23,6 +23,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
     // ROS - Publishers
 	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState>("/joint_states", 1);
 	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::Pose>("/ur_rtde/cartesian_pose", 1);
+	ft_sensor_pub_			 = nh_.advertise<geometry_msgs::Wrench>("/ur_rtde/ft_sensor", 1);
 	robot_status_pub_		 = nh_.advertise<ur_rtde_controller::RobotStatus>("/ur_rtde/ur_safety_status", 1);
 	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>("/ur_rtde/trajectory_executed", 1);
 
@@ -244,6 +245,26 @@ void RTDEController::publishTCPPose()
 
 }
 
+void RTDEController::publishFTSensor()
+{
+
+	// Read FT Sensor Forces
+	std::vector<double> tcp_forces = rtde_receive_ -> getActualTCPForce();
+
+	// Create Wrench Message
+	geometry_msgs::Wrench forces;
+	forces.force.x = tcp_forces[0];
+	forces.force.y = tcp_forces[1];
+	forces.force.z = tcp_forces[2];
+	forces.torque.x = tcp_forces[3];
+	forces.torque.y = tcp_forces[4];
+	forces.torque.z = tcp_forces[5];
+
+	// Publish FTSensor Forces
+	ft_sensor_pub_.publish(forces);
+
+}
+
 void RTDEController::publishTrajectoryExecuted()
 {
 
@@ -336,6 +357,7 @@ void RTDEController::spinner()
 	// Publish JointState and TCPPose
 	publishJointState();
 	publishTCPPose();
+	publishFTSensor();
 	readRobotSafetyStatus();
 
 	// Move to New Trajectory Goal
