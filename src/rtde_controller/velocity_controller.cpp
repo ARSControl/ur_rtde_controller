@@ -231,14 +231,17 @@ void RTDEController::publishTCPPose()
 	Eigen::Vector3d axis(tcp_pose[3], tcp_pose[4], tcp_pose[5]);
 	axis = axis.normalized();
 
+	// Convert Euler to Quaternion
+	Eigen::Quaterniond quaternion(Eigen::AngleAxisd(angle, axis));
+
 	// Write TCP Pose in Pose Message
 	actual_cartesian_pose_.position.x = tcp_pose[0];
 	actual_cartesian_pose_.position.y = tcp_pose[1];
 	actual_cartesian_pose_.position.z = tcp_pose[2];
-	actual_cartesian_pose_.orientation.x = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).x();
-	actual_cartesian_pose_.orientation.y = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).y();
-	actual_cartesian_pose_.orientation.z = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).z();
-	actual_cartesian_pose_.orientation.w = Eigen::Quaterniond(Eigen::AngleAxisd(angle, axis)).w();
+	actual_cartesian_pose_.orientation.x = quaternion.x();
+	actual_cartesian_pose_.orientation.y = quaternion.y();
+	actual_cartesian_pose_.orientation.z = quaternion.z();
+	actual_cartesian_pose_.orientation.w = quaternion.w();
 
 	// Publish TCP Pose
 	tcp_pose_pub_.publish(actual_cartesian_pose_);
