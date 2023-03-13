@@ -24,7 +24,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	}
 
     // ROS - Publishers
-	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState>("/ur_rtde/joint_state", 1);
+	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState>("/joint_states", 1);
 	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::Pose>("/ur_rtde/cartesian_pose", 1);
 	robot_status_pub_		 = nh_.advertise<ur_rtde_controller::RobotStatus>("/ur_rtde/ur_safety_status", 1);
 	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>("/ur_rtde/trajectory_executed", 1);
