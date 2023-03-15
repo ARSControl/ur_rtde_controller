@@ -28,7 +28,11 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 
 ## Running ##
 
+* Set the UR Control Mode to `Remote` on the TP
+
+* To use the Robotiq Gripper remember to Activate it from the TP `UR+` Interface
+
 * Launch RTDE Controller
   
-        roslaunch ur_rtde_controller position_controller.launch
-        roslaunch ur_rtde_controller velocity_controller.launch
+        roslaunch ur_rtde_controller position_controller.launch ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false
+        roslaunch ur_rtde_controller velocity_controller.launch ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false

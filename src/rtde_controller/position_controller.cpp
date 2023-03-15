@@ -111,8 +111,6 @@ bool RTDEController::RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperCo
 	float speed		= req.speed / 100;
 	float force		= req.force / 100;
 
-	ROS_INFO_STREAM("Position: " << position << " | Speed: " << speed << " | Force: " << force);
-
 	// Move Gripper - Normalized Values (0.0 - 1.0)
 	try {res.status = robotiq_gripper_ -> move(position, speed, force, ur_rtde::RobotiqGripper::WAIT_FINISHED);}
 	catch (const std::exception &e) {return false;}
