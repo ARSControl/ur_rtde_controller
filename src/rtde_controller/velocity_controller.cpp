@@ -379,9 +379,9 @@ bool RTDEController::isPoseReached(Eigen::VectorXd position_error, double moveme
 	if ((Eigen::abs(position_error.array()) < movement_precision).all())
 	{
 
-		std::cout << std::endl;
-		ROS_INFO_STREAM("Position Reached - Movement Completed | Position Error: ");
-		std::cout << Eigen::abs(position_error.array()) << std::endl << std::endl;
+		// std::cout << std::endl;
+		// ROS_INFO_STREAM("Position Reached - Movement Completed");
+		// std::cout << "Position Error:\n" << Eigen::abs(position_error.array()) << std::endl << std::endl;
 
 		return true;
 
@@ -479,9 +479,6 @@ void RTDEController::spinner()
 	else if (new_joint_pose_received_)
 	{
 
-		std::cout << desired_joint_pose_[0] << " " << desired_joint_pose_[1] << " " << desired_joint_pose_[2] << " " << desired_joint_pose_[3] << " " << desired_joint_pose_[4] << " " << desired_joint_pose_[5] << std::endl;
-		std::cout << actual_joint_position_[0] << " " << actual_joint_position_[1] << " " << actual_joint_position_[2] << " " << actual_joint_position_[3] << " " << actual_joint_position_[4] << " " << actual_joint_position_[5] << std::endl << std::endl;
-
 		// Compute Position Error
         Eigen::VectorXd position_error = Eigen::VectorXd::Map(desired_joint_pose_.data(), desired_joint_pose_.size()) 
 									   - Eigen::VectorXd::Map(actual_joint_position_.data(), actual_joint_position_.size());
@@ -504,6 +501,9 @@ void RTDEController::spinner()
 		{
 			// Stop Robot
 			rtde_control_ -> speedStop(2.0);
+
+			// Publish Trajectory Executed
+			publishTrajectoryExecuted();
 
 			new_joint_pose_received_ = false;
 		}
@@ -534,6 +534,9 @@ void RTDEController::spinner()
 		{
 			// Stop Robot
 			rtde_control_ -> speedStop(2.0);
+
+			// Publish Trajectory Executed
+			publishTrajectoryExecuted();
 
 			new_cartesian_pose_received_ = false;
 		}
