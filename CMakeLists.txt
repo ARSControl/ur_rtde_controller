@@ -18,7 +18,6 @@ find_package(catkin REQUIRED COMPONENTS
 
 add_message_files(
   FILES
-  RobotStatus.msg
   CartesianPoint.msg
 )
 
@@ -28,6 +27,7 @@ add_service_files(
   GetForwardKinematic.srv
   GetInverseKinematic.srv
   StartFreedriveMode.srv
+  GetRobotStatus.srv
 )
 
 generate_messages(

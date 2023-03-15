@@ -18,11 +18,11 @@
 #include <std_srvs/Trigger.h>
 
 #include "ur_rtde_controller/RobotiQGripperControl.h"
-#include "ur_rtde_controller/RobotStatus.h"
 #include "ur_rtde_controller/CartesianPoint.h"
 #include "ur_rtde_controller/GetForwardKinematic.h"
 #include "ur_rtde_controller/GetInverseKinematic.h"
 #include "ur_rtde_controller/StartFreedriveMode.h"
+#include "ur_rtde_controller/GetRobotStatus.h"
 
 #include <Eigen/Dense>
 
@@ -64,7 +64,6 @@ class RTDEController {
         ros::Publisher joint_state_pub_;
         ros::Publisher tcp_pose_pub_;
         ros::Publisher ft_sensor_pub_;
-        ros::Publisher robot_status_pub_;
         ros::Publisher trajectory_executed_pub_;
 
         // ---- ROS - SUBSCRIBERS & CALLBACKS ---- //
@@ -83,6 +82,7 @@ class RTDEController {
         ros::ServiceServer get_IK_server_;
         ros::ServiceServer start_FreedriveMode_server_;
         ros::ServiceServer stop_FreedriveMode_server_;
+        ros::ServiceServer get_safety_status_server_;
         bool RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request  &req, ur_rtde_controller::RobotiQGripperControl::Response &res);
         bool stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
         bool zeroFTSensorCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
@@ -90,13 +90,13 @@ class RTDEController {
         bool GetInverseKinematicCallback(ur_rtde_controller::GetInverseKinematic::Request  &req, ur_rtde_controller::GetInverseKinematic::Response &res);
         bool startFreedriveModeCallback(ur_rtde_controller::StartFreedriveMode::Request  &req, ur_rtde_controller::StartFreedriveMode::Response &res);
         bool stopFreedriveModeCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
+        bool GetSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res);
 
         // ---- UR RTDE FUNCTIONS ---- //
         void publishJointState();
         void publishTCPPose();
         void publishFTSensor();
         void publishTrajectoryExecuted();
-        void readRobotSafetyStatus();
 
 };
 

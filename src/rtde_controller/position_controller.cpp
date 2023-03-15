@@ -24,7 +24,6 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState>("/joint_states", 1);
 	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::Pose>("/ur_rtde/cartesian_pose", 1);
 	ft_sensor_pub_			 = nh_.advertise<geometry_msgs::Wrench>("/ur_rtde/ft_sensor", 1);
-	robot_status_pub_		 = nh_.advertise<ur_rtde_controller::RobotStatus>("/ur_rtde/ur_safety_status", 1);
 	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>("/ur_rtde/trajectory_executed", 1);
 
     // ROS - Subscribers
@@ -40,6 +39,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
     get_IK_server_				= nh_.advertiseService("/ur_rtde/getIK", &RTDEController::GetInverseKinematicCallback, this);
     start_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/start", &RTDEController::startFreedriveModeCallback, this);
     stop_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/stop",  &RTDEController::stopFreedriveModeCallback, this);
+	get_safety_status_server_	= nh_.advertiseService("/ur_rtde/getSafetyStatus",  &RTDEController::GetSafetyStatusCallback, this);
 
 	ros::Duration(1).sleep();
 	ROS_INFO("UR RTDE Controller - Initialized");
@@ -194,6 +194,80 @@ bool RTDEController::stopFreedriveModeCallback(std_srvs::Trigger::Request &req, 
 	return res.success;
 }
 
+bool RTDEController::GetSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res)
+{
+	/************************************************
+	 * 												*
+	 *  Safety Status Bits 0-10:					*
+	 * 												*
+	 * 		0 = Is normal mode						*
+	 * 		1 = Is reduced mode						*
+	 * 		2 = Is protective stopped				*
+	 * 		3 = Is recovery mode					*
+	 * 		4 = Is safeguard stopped				*
+	 * 		5 = Is system emergency stopped			*
+	 * 		6 = Is robot emergency stopped			*
+	 * 		7 = Is emergency stopped				*
+	 * 		8 = Is violation						*
+	 * 		9 = Is fault							*
+	 * 	   10 = Is stopped due to safety 			*
+	 * 												*
+	 ***********************************************/
+
+	/************************************************
+	 * 												*
+	 *  Safety Mode									*
+	 * 												*
+	 *		0 = NORMAL					 			*
+	 *		1 = REDUCED					 			*
+	 *		2 = PROTECTIVE_STOP						*
+	 *		3 = RECOVERY							*
+	 *		4 = SAFEGUARD_STOP						*
+	 * 		5 = SYSTEM_EMERGENCY_STOP				*
+	 * 		6 = ROBOT_EMERGENCY_STOP				*
+	 *		7 = VIOLATION							*
+	 *		8 = FAULT								*
+	 * 												*
+	 ***********************************************/
+
+	/************************************************
+	 * 												*
+	 *  Robot Mode									*
+	 * 												*
+	 *	   -1 = ROBOT_MODE_NO_CONTROLLER			*
+	 *		0 = ROBOT_MODE_DISCONNECTED 			*
+	 *		1 = ROBOT_MODE_CONFIRM_SAFETY 			*
+	 *		2 = ROBOT_MODE_BOOTING					*
+	 *		3 = ROBOT_MODE_POWER_OFF				*
+	 *		4 = ROBOT_MODE_POWER_ON					*
+	 * 		5 = ROBOT_MODE_IDLE						*
+	 * 		6 = ROBOT_MODE_BACKDRIVE				*
+	 *		7 = ROBOT_MODE_RUNNING					*
+	 *		8 = ROBOT_MODE_UPDATING_FIRMWARE		*
+	 * 												*
+	 ***********************************************/
+
+	std::vector<std::string> robot_mode_msg = {"ROBOT_MODE_NO_CONTROLLER", "ROBOT_MODE_DISCONNECTED", "ROBOT_MODE_CONFIRM_SAFETY", "ROBOT_MODE_BOOTING", "ROBOT_MODE_POWER_OFF", "ROBOT_MODE_POWER_ON", "ROBOT_MODE_IDLE", "ROBOT_MODE_BACKDRIVE", "ROBOT_MODE_RUNNING", "ROBOT_MODE_UPDATING_FIRMWARE"};
+	std::vector<std::string> safety_mode_msg = {"NORMAL", "REDUCED", "PROTECTIVE_STOP", "RECOVERY", "SAFEGUARD_STOP", "SYSTEM_EMERGENCY_STOP", "ROBOT_EMERGENCY_STOP", "VIOLATION" "FAULT"};
+	std::vector<std::string> safety_status_bits_msg = {"Is normal mode", "Is reduced mode", "Is protective stopped", "Is recovery mode", "Is safeguard stopped", "Is system emergency stopped", "Is robot emergency stopped", "Is emergency stopped", "Is violation", "Is fault", "Is stopped due to safety"};
+
+	// Get Robot Mode
+	res.robot_mode = rtde_receive_ -> getRobotMode();
+	res.robot_mode_msg = robot_mode_msg[res.robot_mode + 1];
+
+	// Get Safety Mode
+	res.safety_mode = rtde_receive_ -> getSafetyMode();
+	res.safety_mode_msg = safety_mode_msg[res.safety_mode];
+
+	// Get Safety Status Bits
+	res.safety_status_bits = int(rtde_receive_ -> getSafetyStatusBits());
+	res.safety_status_bits_msg = safety_status_bits_msg[res.safety_status_bits];
+
+	res.success = true;
+	return res.success;
+
+}
+
 void RTDEController::publishJointState()
 {
 
@@ -275,80 +349,6 @@ void RTDEController::publishTrajectoryExecuted()
 
 }
 
-void RTDEController::readRobotSafetyStatus()
-{
-	/************************************************
-	 * 												*
-	 *  Safety Status Bits 0-10:					*
-	 * 												*
-	 * 		0 = Is normal mode						*
-	 * 		1 = Is reduced mode						*
-	 * 		2 = Is protective stopped				*
-	 * 		3 = Is recovery mode					*
-	 * 		4 = Is safeguard stopped				*
-	 * 		5 = Is system emergency stopped			*
-	 * 		6 = Is robot emergency stopped			*
-	 * 		7 = Is emergency stopped				*
-	 * 		8 = Is violation						*
-	 * 		9 = Is fault							*
-	 * 	   10 = Is stopped due to safety 			*
-	 * 												*
-	 ***********************************************/
-
-	/************************************************
-	 * 												*
-	 *  Safety Mode									*
-	 * 												*
-	 *		0 = NORMAL					 			*
-	 *		1 = REDUCED					 			*
-	 *		2 = PROTECTIVE_STOP						*
-	 *		3 = RECOVERY							*
-	 *		4 = SAFEGUARD_STOP						*
-	 * 		5 = SYSTEM_EMERGENCY_STOP				*
-	 * 		6 = ROBOT_EMERGENCY_STOP				*
-	 *		7 = VIOLATION							*
-	 *		8 = FAULT								*
-	 * 												*
-	 ***********************************************/
-
-	/************************************************
-	 * 												*
-	 *  Robot Mode									*
-	 * 												*
-	 *	   -1 = ROBOT_MODE_NO_CONTROLLER			*
-	 *		0 = ROBOT_MODE_DISCONNECTED 			*
-	 *		1 = ROBOT_MODE_CONFIRM_SAFETY 			*
-	 *		2 = ROBOT_MODE_BOOTING					*
-	 *		3 = ROBOT_MODE_POWER_OFF				*
-	 *		4 = ROBOT_MODE_POWER_ON					*
-	 * 		5 = ROBOT_MODE_IDLE						*
-	 * 		6 = ROBOT_MODE_BACKDRIVE				*
-	 *		7 = ROBOT_MODE_RUNNING					*
-	 *		8 = ROBOT_MODE_UPDATING_FIRMWARE		*
-	 * 												*
-	 ***********************************************/
-
-	ur_rtde_controller::RobotStatus robot_status;
-	std::vector<std::string> robot_mode_msg = {"ROBOT_MODE_NO_CONTROLLER", "ROBOT_MODE_DISCONNECTED", "ROBOT_MODE_CONFIRM_SAFETY", "ROBOT_MODE_BOOTING", "ROBOT_MODE_POWER_OFF", "ROBOT_MODE_POWER_ON", "ROBOT_MODE_IDLE", "ROBOT_MODE_BACKDRIVE", "ROBOT_MODE_RUNNING", "ROBOT_MODE_UPDATING_FIRMWARE"};
-	std::vector<std::string> safety_mode_msg = {"NORMAL", "REDUCED", "PROTECTIVE_STOP", "RECOVERY", "SAFEGUARD_STOP", "SYSTEM_EMERGENCY_STOP", "ROBOT_EMERGENCY_STOP", "VIOLATION" "FAULT"};
-	std::vector<std::string> safety_status_bits_msg = {"Is normal mode", "Is reduced mode", "Is protective stopped", "Is recovery mode", "Is safeguard stopped", "Is system emergency stopped", "Is robot emergency stopped", "Is emergency stopped", "Is violation", "Is fault", "Is stopped due to safety"};
-
-	// Get Robot Mode
-	robot_status.robot_mode = rtde_receive_ -> getRobotMode();
-	robot_status.robot_mode_msg = robot_mode_msg[robot_status.robot_mode + 1];
-
-	// Get Safety Mode
-	robot_status.safety_mode = rtde_receive_ -> getSafetyMode();
-	robot_status.safety_mode_msg = safety_mode_msg[robot_status.safety_mode];
-
-	// Get Safety Status Bits
-	robot_status.safety_status_bits = int(rtde_receive_ -> getSafetyStatusBits());
-	robot_status.safety_status_bits_msg = safety_status_bits_msg[robot_status.safety_status_bits];
-
-	robot_status_pub_.publish(robot_status);
-
-}
-
 void RTDEController::spinner()
 {
 
@@ -358,7 +358,6 @@ void RTDEController::spinner()
 	publishJointState();
 	publishTCPPose();
 	publishFTSensor();
-	readRobotSafetyStatus();
 
 	// Move to New Trajectory Goal
 	if (new_trajectory_received_)
