@@ -18,12 +18,6 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 		robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, true);
 		robotiq_gripper_ -> connect();
 
-		// Test of move functionality with normalized values (0.0 - 1.0)
-		int status = robotiq_gripper_ -> move(1, 1, 0, ur_rtde::RobotiqGripper::WAIT_FINISHED);
-		// printStatus(status);
-		status = robotiq_gripper_ -> move(0, 1, 0, ur_rtde::RobotiqGripper::WAIT_FINISHED);
-		// printStatus(status);
-
 		// Gripper Service Server
 		robotiq_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/command", &RTDEController::RobotiQGripperCallback, this);
 
