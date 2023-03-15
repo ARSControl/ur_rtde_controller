@@ -2,7 +2,6 @@
 
 RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh), ros_rate_(ros_rate)
 {
-
 	// Load Parameters
 	if(!nh_.param<std::string>("/ur_velocity_controller/ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
 	if(!nh_.param<bool>("/ur_velocity_controller/enable_gripper", enable_gripper, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper);}
@@ -18,8 +17,12 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	// RobotiQ Gripper
 	if (enable_gripper) {
 
+		// Initialize Gripper
 		robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, true);
 		robotiq_gripper_ -> connect();
+
+		// Gripper Service Server
+		robotiq_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/command", &RTDEController::RobotiQGripperCallback, this);
 
 	}
 
@@ -37,7 +40,6 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	cartesian_goal_command_sub_		= nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command", 1, &RTDEController::cartesianGoalCallback, this);
 
 	// ROS - Service Servers
-	robotiq_gripper_server_		= nh_.advertiseService("/ur_rtde/robotiq_gripper/command", &RTDEController::RobotiQGripperCallback, this);
 	stop_robot_server_			= nh_.advertiseService("/ur_rtde/controllers/stop_robot", &RTDEController::stopRobotCallback, this);
 	zeroFT_sensor_server_		= nh_.advertiseService("/ur_rtde/zeroFTSensor", &RTDEController::zeroFTSensorCallback, this);
     get_FK_server_				= nh_.advertiseService("/ur_rtde/getFK", &RTDEController::GetForwardKinematicCallback, this);
@@ -48,28 +50,22 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 
 	ros::Duration(1).sleep();
 	ROS_INFO("UR RTDE Controller - Initialized");
-
 }
 
 RTDEController::~RTDEController()
 {
-
 	rtde_control_ -> stopJ(2.0);
 	rtde_control_ -> disconnect();
-
 }
 
 void RTDEController::jointVelocityCallback(const trajectory_msgs::JointTrajectory msg)
 {
-
 	// Joint Velocity Publisher
 	rtde_control_ -> speedJ(msg.points[0].velocities, max_acc_, 0.002);
-
 }
 
 void RTDEController::cartesianVelocityCallback(const geometry_msgs::Twist msg)
 {
-
 	// Create Desired Velocity Vector
 	std::vector<double> desired_cartesian_velocity;
 	desired_cartesian_velocity.push_back(msg.linear.x);
@@ -81,39 +77,32 @@ void RTDEController::cartesianVelocityCallback(const geometry_msgs::Twist msg)
 
 	// Cartesian Velocity Publisher
 	rtde_control_ -> speedL(desired_cartesian_velocity, max_acc_, 0.002);
-
 }
 
 void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg)
 {
-
+	//https://gitlab.com/sdurobotics/ur_rtde/-/blob/master/src/rtde_control_interface.cpp
+	// rtde_control_ -> movePath
 	desired_trajectory_ = msg;
 	new_trajectory_received_ = true;
-
 }
 
 void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg)
 {
-
 	// Received New Joint Goal
 	desired_joint_pose_ = msg.positions;
-
 	new_joint_pose_received_ = true;
-
 }
 
 void RTDEController::cartesianGoalCallback(const geometry_msgs::Pose msg)
 {
 	// Convert Received New Pose to Eigen Vector
 	desired_cartesian_pose_ = pose2eigen(msg);
-
 	new_cartesian_pose_received_ = true;
-
 }
 
 bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
-
 	// Stop Robot in Joint Space
 	rtde_control_ -> stopJ(2.0);
 
@@ -124,7 +113,6 @@ bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs
 
 	res.success = true;
 	return res.success;
-
 }
 
 bool RTDEController::RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request  &req, ur_rtde_controller::RobotiQGripperControl::Response &res)
@@ -135,7 +123,8 @@ bool RTDEController::RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperCo
 	float force		= req.force / 100;
 
 	// Move Gripper - Normalized Values (0.0 - 1.0)
-	res.status = robotiq_gripper_ -> move(position, speed, force, ur_rtde::RobotiqGripper::WAIT_FINISHED);
+	try {res.status = robotiq_gripper_ -> move(position, speed, force, ur_rtde::RobotiqGripper::WAIT_FINISHED);}
+	catch (const std::exception &e) {return false;}
 
 	/************************************************************************************************
 	 *																								*
@@ -150,14 +139,12 @@ bool RTDEController::RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperCo
 
 	res.success = true;
 	return res.success;
-
 }
 
 bool RTDEController::zeroFTSensorCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
 	// Reset Force-Torque Sensor
 	res.success = rtde_control_ -> zeroFtSensor();
-
 	return res.success;
 }
 
@@ -166,22 +153,8 @@ bool RTDEController::GetForwardKinematicCallback(ur_rtde_controller::GetForwardK
 	// Compute Forward Kinematic
 	std::vector<double> tcp_pose = rtde_control_ -> getForwardKinematics(req.joint_position, {0.0,0.0,0.0,0.0,0.0,0.0});
 
-	// Compute AngleAxis from rx,ry,rz
-    double angle = sqrt(pow(tcp_pose[3],2) + pow(tcp_pose[4],2) + pow(tcp_pose[5],2));
-	Eigen::Vector3d axis(tcp_pose[3], tcp_pose[4], tcp_pose[5]);
-	axis = axis.normalized();
-
-	// Convert Euler to Quaternion
-	Eigen::Quaterniond quaternion(Eigen::AngleAxisd(angle, axis));
-
-	// Write TCP Pose in Pose Message
-	res.tcp_position.position.x = tcp_pose[0];
-	res.tcp_position.position.y = tcp_pose[1];
-	res.tcp_position.position.z = tcp_pose[2];
-	res.tcp_position.orientation.x = quaternion.x();
-	res.tcp_position.orientation.y = quaternion.y();
-	res.tcp_position.orientation.z = quaternion.z();
-	res.tcp_position.orientation.w = quaternion.w();
+	// Convert RTDE Pose to Geometry Pose
+	res.tcp_position = RTDE2Pose(tcp_pose);
 
 	res.success = true;
 	return res.success;
@@ -189,22 +162,8 @@ bool RTDEController::GetForwardKinematicCallback(ur_rtde_controller::GetForwardK
 
 bool RTDEController::GetInverseKinematicCallback(ur_rtde_controller::GetInverseKinematic::Request  &req, ur_rtde_controller::GetInverseKinematic::Response &res)
 {
-	// Create a Quaternion from Pose Orientation
-	Eigen::Quaterniond quaternion(req.tcp_position.orientation.w, req.tcp_position.orientation.x, req.tcp_position.orientation.y, req.tcp_position.orientation.z);
-
-    // Convert from Quaternion to Euler Angles
-    Eigen::Vector3d axis = Eigen::AngleAxisd(quaternion).axis();
-    double angle = Eigen::AngleAxisd(quaternion).angle();
-	Eigen::Vector3d euler_orientation = axis * angle;
-
-	// Create TCP Pose Message
-	std::vector<double> tcp_pose;
-	tcp_pose.push_back(req.tcp_position.position.x);
-	tcp_pose.push_back(req.tcp_position.position.y);
-	tcp_pose.push_back(req.tcp_position.position.z);
-	tcp_pose.push_back(euler_orientation[0]);
-	tcp_pose.push_back(euler_orientation[1]);
-	tcp_pose.push_back(euler_orientation[2]);
+	// Convert Geometry Pose to RTDE Pose
+	std::vector<double> tcp_pose = Pose2RTDE(req.tcp_position);
 
 	// Compute Inverse Kinematic
 	res.joint_position = rtde_control_ -> getInverseKinematics(tcp_pose);
@@ -220,7 +179,6 @@ bool RTDEController::startFreedriveModeCallback(ur_rtde_controller::StartFreedri
 
 	// Start FreeDrive Mode
 	res.success = rtde_control_ -> freedriveMode(req.free_axes);
-
 	return res.success;
 }
 
@@ -228,7 +186,6 @@ bool RTDEController::stopFreedriveModeCallback(std_srvs::Trigger::Request &req, 
 {
 	// Exit from FreeDrive Mode
 	res.success = rtde_control_ -> endFreedriveMode();
-
 	return res.success;
 }
 
@@ -303,63 +260,35 @@ bool RTDEController::GetSafetyStatusCallback(ur_rtde_controller::GetRobotStatus:
 
 	res.success = true;
 	return res.success;
-
 }
 
 void RTDEController::publishJointState()
 {
-
+	// Create JointState Message
 	sensor_msgs::JointState joint_state;
-	joint_state.position.resize(6);
-	joint_state.velocity.resize(6);
 
 	// Read Joint Position and Velocity
-	actual_joint_position_ = rtde_receive_ -> getActualQ();
-	actual_joint_velocity_ = rtde_receive_ -> getActualQd();
-
-	// Write Joint Position and Velocity in JointState Message
-	for(int i = 0; i < 6; i++)
-	{
-		joint_state.position[i] = actual_joint_position_[i];
-		joint_state.velocity[i] = actual_joint_velocity_[i];
-	}
+	joint_state.position = actual_joint_position_ = rtde_receive_ -> getActualQ();
+	joint_state.velocity = rtde_receive_ -> getActualQd();
 
 	// Publish JointState
 	joint_state_pub_.publish(joint_state);
-
 }
 
 void RTDEController::publishTCPPose()
 {
-
-	// Read Joint Position
+	// Read TCP Position
 	std::vector<double> tcp_pose = rtde_receive_ -> getActualTCPPose();
 
-	// Compute AngleAxis from rx,ry,rz
-	double angle = sqrt(pow(tcp_pose[3],2) + pow(tcp_pose[4],2) + pow(tcp_pose[5],2));
-	Eigen::Vector3d axis(tcp_pose[3], tcp_pose[4], tcp_pose[5]);
-	axis = axis.normalized();
-
-	// Convert Euler to Quaternion
-	Eigen::Quaterniond quaternion(Eigen::AngleAxisd(angle, axis));
-
-	// Write TCP Pose in Pose Message
-	actual_cartesian_pose_.position.x = tcp_pose[0];
-	actual_cartesian_pose_.position.y = tcp_pose[1];
-	actual_cartesian_pose_.position.z = tcp_pose[2];
-	actual_cartesian_pose_.orientation.x = quaternion.x();
-	actual_cartesian_pose_.orientation.y = quaternion.y();
-	actual_cartesian_pose_.orientation.z = quaternion.z();
-	actual_cartesian_pose_.orientation.w = quaternion.w();
+	// Convert RTDE Pose to Geometry Pose
+	actual_cartesian_pose_ = RTDE2Pose(tcp_pose);
 
 	// Publish TCP Pose
 	tcp_pose_pub_.publish(actual_cartesian_pose_);
-
 }
 
 void RTDEController::publishFTSensor()
 {
-
 	// Read FT Sensor Forces
 	std::vector<double> tcp_forces = rtde_receive_ -> getActualTCPForce();
 
@@ -374,17 +303,14 @@ void RTDEController::publishFTSensor()
 
 	// Publish FTSensor Forces
 	ft_sensor_pub_.publish(forces);
-
 }
 
 void RTDEController::publishTrajectoryExecuted()
 {
-
 	// Publish Trajectory Executed Message
 	std_msgs::Bool trajectory_executed;
 	trajectory_executed.data = true;
 	trajectory_executed_pub_.publish(trajectory_executed);
-
 }
 
 Eigen::Matrix<double, 4, 4> RTDEController::pose2eigen(geometry_msgs::Pose pose)
@@ -442,9 +368,54 @@ bool RTDEController::isPoseReached(Eigen::VectorXd position_error, double moveme
 
 }
 
+std::vector<double> RTDEController::Pose2RTDE(geometry_msgs::Pose pose)
+{
+	// Create a Quaternion from Pose Orientation
+	Eigen::Quaterniond quaternion(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
+
+    // Convert from Quaternion to Euler Angles
+    Eigen::Vector3d axis = Eigen::AngleAxisd(quaternion).axis();
+    double angle = Eigen::AngleAxisd(quaternion).angle();
+	Eigen::Vector3d euler_orientation = axis * angle;
+
+	// Create TCP Pose Message
+	std::vector<double> tcp_pose;
+	tcp_pose.push_back(pose.position.x);
+	tcp_pose.push_back(pose.position.y);
+	tcp_pose.push_back(pose.position.z);
+	tcp_pose.push_back(euler_orientation[0]);
+	tcp_pose.push_back(euler_orientation[1]);
+	tcp_pose.push_back(euler_orientation[2]);
+
+	return tcp_pose;
+}
+
+geometry_msgs::Pose RTDEController::RTDE2Pose(std::vector<double> rtde_pose)
+{
+	// Compute AngleAxis from rx,ry,rz
+    double angle = sqrt(pow(rtde_pose[3],2) + pow(rtde_pose[4],2) + pow(rtde_pose[5],2));
+	Eigen::Vector3d axis(rtde_pose[3], rtde_pose[4], rtde_pose[5]);
+	axis = axis.normalized();
+
+	// Convert Euler to Quaternion
+	Eigen::Quaterniond quaternion(Eigen::AngleAxisd(angle, axis));
+
+	// Write TCP Pose in Geometry Pose Message
+	geometry_msgs::Pose pose;
+	pose.position.x = rtde_pose[0];
+	pose.position.y = rtde_pose[1];
+	pose.position.z = rtde_pose[2];
+	pose.orientation.x = quaternion.x();
+	pose.orientation.y = quaternion.y();
+	pose.orientation.z = quaternion.z();
+	pose.orientation.w = quaternion.w();
+
+	return pose;
+}
+
 void RTDEController::spinner()
 {
-
+	// Callback Readings
 	ros::spinOnce();
 
 	// Publish JointState and TCPPose
@@ -463,7 +434,7 @@ void RTDEController::spinner()
 		next_point.push_back(desired_trajectory_.points[0].accelerations);
 		next_point.push_back(desired_trajectory_.points[0].effort);
 
-		// Move to the First Trajectory Point
+		// TODO: Move to the First Trajectory Point
 		rtde_control_ -> moveJ(desired_trajectory_.points[0].positions);
 
 		// Erase Point from Trajectory
