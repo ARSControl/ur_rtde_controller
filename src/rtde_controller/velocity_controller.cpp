@@ -189,10 +189,27 @@ bool RTDEController::GetForwardKinematicCallback(ur_rtde_controller::GetForwardK
 
 bool RTDEController::GetInverseKinematicCallback(ur_rtde_controller::GetInverseKinematic::Request  &req, ur_rtde_controller::GetInverseKinematic::Response &res)
 {
-	// Compute Inverse Kinematic
-	res.joint_position = rtde_control_ -> getInverseKinematics(req.tcp_position);
-	res.success = true;
+	// Create a Quaternion from Pose Orientation
+	Eigen::Quaterniond quaternion(req.tcp_position.orientation.w, req.tcp_position.orientation.x, req.tcp_position.orientation.y, req.tcp_position.orientation.z);
 
+    // Convert from Quaternion to Euler Angles
+    Eigen::Vector3d axis = Eigen::AngleAxisd(quaternion).axis();
+    double angle = Eigen::AngleAxisd(quaternion).angle();
+	Eigen::Vector3d euler_orientation = axis * angle;
+
+	// Create TCP Pose Message
+	std::vector<double> tcp_pose;
+	tcp_pose.push_back(req.tcp_position.position.x);
+	tcp_pose.push_back(req.tcp_position.position.y);
+	tcp_pose.push_back(req.tcp_position.position.z);
+	tcp_pose.push_back(euler_orientation[0]);
+	tcp_pose.push_back(euler_orientation[1]);
+	tcp_pose.push_back(euler_orientation[2]);
+
+	// Compute Inverse Kinematic
+	res.joint_position = rtde_control_ -> getInverseKinematics(tcp_pose);
+
+	res.success = true;
 	return res.success;
 }
 

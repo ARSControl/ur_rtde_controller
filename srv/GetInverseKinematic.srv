@@ -1,4 +1,4 @@
-float64[] tcp_position
+geometry_msgs/Pose tcp_position
 ---
 float64[] joint_position
 bool success
