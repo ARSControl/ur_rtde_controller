@@ -255,9 +255,6 @@ void RTDEController::publishJointState()
 {
 	while (ros::ok())
 	{
-		// Callback Readings
-		ros::spinOnce();
-
 		// Create JointState Message
 		sensor_msgs::JointState joint_state;
 
@@ -274,9 +271,6 @@ void RTDEController::publishTCPPose()
 {
 	while (ros::ok())
 	{
-		// Callback Readings
-		ros::spinOnce();
-
 		// Read TCP Position
 		std::vector<double> tcp_pose = rtde_receive_ -> getActualTCPPose();
 
@@ -292,9 +286,6 @@ void RTDEController::publishFTSensor()
 {
 	while (ros::ok())
 	{
-		// Callback Readings
-		ros::spinOnce();
-
 		// Read FT Sensor Forces
 		std::vector<double> tcp_forces = rtde_receive_ -> getActualTCPForce();
 

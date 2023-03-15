@@ -106,15 +106,14 @@ void RTDEController::cartesianGoalCallback(const geometry_msgs::Pose msg)
 
 bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
-	// Stop Robot in Joint Space
-	rtde_control_ -> stopJ(2.0);
+	// Stop Robot in Velocity
+	res.success = rtde_control_ -> speedStop(2.0);
 
 	// Reset Booleans
 	new_trajectory_received_ = false;
 	new_joint_pose_received_ = false;
 	new_cartesian_pose_received_ = false;
 
-	res.success = true;
 	return res.success;
 }
 
@@ -269,9 +268,6 @@ void RTDEController::publishJointState()
 {
 	while (ros::ok())
 	{
-		// Callback Readings
-		ros::spinOnce();
-
 		// Create JointState Message
 		sensor_msgs::JointState joint_state;
 
@@ -288,9 +284,6 @@ void RTDEController::publishTCPPose()
 {
 	while (ros::ok())
 	{
-		// Callback Readings
-		ros::spinOnce();
-
 		// Read TCP Position
 		std::vector<double> tcp_pose = rtde_receive_ -> getActualTCPPose();
 
@@ -306,9 +299,6 @@ void RTDEController::publishFTSensor()
 {
 	while (ros::ok())
 	{
-		// Callback Readings
-		ros::spinOnce();
-
 		// Read FT Sensor Forces
 		std::vector<double> tcp_forces = rtde_receive_ -> getActualTCPForce();
 
