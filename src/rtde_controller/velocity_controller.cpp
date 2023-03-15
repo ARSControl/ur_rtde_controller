@@ -164,9 +164,26 @@ bool RTDEController::zeroFTSensorCallback(std_srvs::Trigger::Request &req, std_s
 bool RTDEController::GetForwardKinematicCallback(ur_rtde_controller::GetForwardKinematic::Request  &req, ur_rtde_controller::GetForwardKinematic::Response &res)
 {
 	// Compute Forward Kinematic
-	res.tcp_position = rtde_control_ -> getForwardKinematics(req.joint_position);
-	res.success = true;
+	std::vector<double> tcp_pose = rtde_control_ -> getForwardKinematics(req.joint_position, {0.0,0.0,0.0,0.0,0.0,0.0});
 
+	// Compute AngleAxis from rx,ry,rz
+    double angle = sqrt(pow(tcp_pose[3],2) + pow(tcp_pose[4],2) + pow(tcp_pose[5],2));
+	Eigen::Vector3d axis(tcp_pose[3], tcp_pose[4], tcp_pose[5]);
+	axis = axis.normalized();
+
+	// Convert Euler to Quaternion
+	Eigen::Quaterniond quaternion(Eigen::AngleAxisd(angle, axis));
+
+	// Write TCP Pose in Pose Message
+	res.tcp_position.position.x = tcp_pose[0];
+	res.tcp_position.position.y = tcp_pose[1];
+	res.tcp_position.position.z = tcp_pose[2];
+	res.tcp_position.orientation.x = quaternion.x();
+	res.tcp_position.orientation.y = quaternion.y();
+	res.tcp_position.orientation.z = quaternion.z();
+	res.tcp_position.orientation.w = quaternion.w();
+
+	res.success = true;
 	return res.success;
 }
 
