@@ -262,7 +262,7 @@ void RTDEController::publishJointState()
 		sensor_msgs::JointState joint_state;
 
 		// Read Joint Position and Velocity
-		joint_state.position = actual_joint_position_ = rtde_receive_ -> getActualQ();
+		joint_state.position = rtde_receive_ -> getActualQ();
 		joint_state.velocity = rtde_receive_ -> getActualQd();
 
 		// Publish JointState
@@ -281,10 +281,10 @@ void RTDEController::publishTCPPose()
 		std::vector<double> tcp_pose = rtde_receive_ -> getActualTCPPose();
 
 		// Convert RTDE Pose to Geometry Pose
-		actual_cartesian_pose_ = RTDE2Pose(tcp_pose);
+		geometry_msgs::Pose pose = RTDE2Pose(tcp_pose);
 
 		// Publish TCP Pose
-		tcp_pose_pub_.publish(actual_cartesian_pose_);
+		tcp_pose_pub_.publish(pose);
 	}
 }
 
@@ -369,6 +369,10 @@ void RTDEController::spinner()
 {
 	// Callback Readings
 	ros::spinOnce();
+
+	// Update Actual Joint and TCP Positions
+	actual_joint_position_ = rtde_receive_ -> getActualQ();
+	actual_cartesian_pose_ = RTDE2Pose(rtde_receive_ -> getActualTCPPose());
 
 	// Move to New Trajectory Goal
 	if (new_trajectory_received_)

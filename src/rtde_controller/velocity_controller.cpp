@@ -276,7 +276,7 @@ void RTDEController::publishJointState()
 		sensor_msgs::JointState joint_state;
 
 		// Read Joint Position and Velocity
-		joint_state.position = actual_joint_position_ = rtde_receive_ -> getActualQ();
+		joint_state.position = rtde_receive_ -> getActualQ();
 		joint_state.velocity = rtde_receive_ -> getActualQd();
 
 		// Publish JointState
@@ -295,10 +295,10 @@ void RTDEController::publishTCPPose()
 		std::vector<double> tcp_pose = rtde_receive_ -> getActualTCPPose();
 
 		// Convert RTDE Pose to Geometry Pose
-		actual_cartesian_pose_ = RTDE2Pose(tcp_pose);
+		geometry_msgs::Pose pose = RTDE2Pose(tcp_pose);
 
 		// Publish TCP Pose
-		tcp_pose_pub_.publish(actual_cartesian_pose_);
+		tcp_pose_pub_.publish(pose);
 	}
 }
 
@@ -439,6 +439,10 @@ void RTDEController::spinner()
 	// Callback Readings
 	ros::spinOnce();
 
+	// Update Actual Joint and TCP Positions
+	actual_joint_position_ = rtde_receive_ -> getActualQ();
+	actual_cartesian_pose_ = RTDE2Pose(rtde_receive_ -> getActualTCPPose());
+
 	// Move to New Trajectory Goal
 	if (new_trajectory_received_)
 	{
@@ -474,6 +478,9 @@ void RTDEController::spinner()
 
 	else if (new_joint_pose_received_)
 	{
+
+		std::cout << desired_joint_pose_[0] << " " << desired_joint_pose_[1] << " " << desired_joint_pose_[2] << " " << desired_joint_pose_[3] << " " << desired_joint_pose_[4] << " " << desired_joint_pose_[5] << std::endl;
+		std::cout << actual_joint_position_[0] << " " << actual_joint_position_[1] << " " << actual_joint_position_[2] << " " << actual_joint_position_[3] << " " << actual_joint_position_[4] << " " << actual_joint_position_[5] << std::endl << std::endl;
 
 		// Compute Position Error
         Eigen::VectorXd position_error = Eigen::VectorXd::Map(desired_joint_pose_.data(), desired_joint_pose_.size()) 
