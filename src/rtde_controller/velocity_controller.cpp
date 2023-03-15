@@ -49,13 +49,16 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	get_safety_status_server_	= nh_.advertiseService("/ur_rtde/getSafetyStatus",  &RTDEController::GetSafetyStatusCallback, this);
 
 	ros::Duration(1).sleep();
-	ROS_INFO("UR RTDE Controller - Initialized");
+	std::cout << std::endl;
+	ROS_WARN("UR RTDE Controller - Connected\n");
 }
 
 RTDEController::~RTDEController()
 {
 	rtde_control_ -> stopJ(2.0);
 	rtde_control_ -> disconnect();
+	std::cout << std::endl;
+	ROS_WARN("UR RTDE Controller - Disconnected\n");
 }
 
 void RTDEController::jointVelocityCallback(const trajectory_msgs::JointTrajectory msg)
@@ -522,14 +525,32 @@ void RTDEController::spinner()
 
 }
 
+// Create a Null-Pointer to the RTDE Class
+RTDEController *rtde = nullptr;
+
+void signalHandler(int signal)
+{
+	std::cout << "\nKeyboard Interrupt Received\n";
+	delete rtde;
+	exit(signal);
+}
+
 int main(int argc, char **argv) {
 
-	ros::init(argc, argv, "ur_rtde_controller");
+    ros::init(argc, argv, "ur_rtde_controller", ros::init_options::NoSigintHandler);
 
 	ros::NodeHandle nh;
 	ros::Rate loop_rate = 500;
 
-	RTDEController *rtde = new RTDEController(nh, loop_rate);
+	// Create a New RTDEController
+	rtde = new RTDEController(nh, loop_rate);
+
+	// Create a SIGINT Handler
+	struct sigaction sa;
+    sa.sa_handler = signalHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+	sigaction(SIGINT, &sa, NULL);
 
 	while (ros::ok()) {
 

@@ -18,6 +18,12 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 		robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, true);
 		robotiq_gripper_ -> connect();
 
+		// Test of move functionality with normalized values (0.0 - 1.0)
+		int status = robotiq_gripper_ -> move(1, 1, 0, ur_rtde::RobotiqGripper::WAIT_FINISHED);
+		// printStatus(status);
+		status = robotiq_gripper_ -> move(0, 1, 0, ur_rtde::RobotiqGripper::WAIT_FINISHED);
+		// printStatus(status);
+
 		// Gripper Service Server
 		robotiq_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/command", &RTDEController::RobotiQGripperCallback, this);
 
@@ -136,7 +142,6 @@ bool RTDEController::zeroFTSensorCallback(std_srvs::Trigger::Request &req, std_s
 {
 	// Reset Force-Torque Sensor
 	res.success = rtde_control_ -> zeroFtSensor();
-
 	return res.success;
 }
 
@@ -171,7 +176,6 @@ bool RTDEController::startFreedriveModeCallback(ur_rtde_controller::StartFreedri
 
 	// Start FreeDrive Mode
 	res.success = rtde_control_ -> freedriveMode(req.free_axes);
-
 	return res.success;
 }
 
@@ -179,7 +183,6 @@ bool RTDEController::stopFreedriveModeCallback(std_srvs::Trigger::Request &req, 
 {
 	// Exit from FreeDrive Mode
 	res.success = rtde_control_ -> endFreedriveMode();
-
 	return res.success;
 }
 
@@ -354,7 +357,7 @@ geometry_msgs::Pose RTDEController::RTDE2Pose(std::vector<double> rtde_pose)
 
 void RTDEController::spinner()
 {
-
+	// Callback Readings
 	ros::spinOnce();
 
 	// Publish JointState and TCPPose
@@ -400,14 +403,32 @@ void RTDEController::spinner()
 
 }
 
+// Create a Null-Pointer to the RTDE Class
+RTDEController *rtde = nullptr;
+
+void signalHandler(int signal)
+{
+	std::cout << "\nKeyboard Interrupt Received\n";
+	delete rtde;
+	exit(signal);
+}
+
 int main(int argc, char **argv) {
 
-    ros::init(argc, argv, "ur_rtde_controller");
+    ros::init(argc, argv, "ur_rtde_controller", ros::init_options::NoSigintHandler);
 
     ros::NodeHandle nh;
     ros::Rate loop_rate = 500;
 
-    RTDEController *rtde = new RTDEController(nh, loop_rate);
+	// Create a New RTDEController
+    rtde = new RTDEController(nh, loop_rate);
+
+	// Create a SIGINT Handler
+	struct sigaction sa;
+    sa.sa_handler = signalHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+	sigaction(SIGINT, &sa, NULL);
 
     while (ros::ok()) {
 
