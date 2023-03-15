@@ -267,45 +267,63 @@ bool RTDEController::GetSafetyStatusCallback(ur_rtde_controller::GetRobotStatus:
 
 void RTDEController::publishJointState()
 {
-	// Create JointState Message
-	sensor_msgs::JointState joint_state;
+	while (ros::ok())
+	{
+		// Callback Readings
+		ros::spinOnce();
 
-	// Read Joint Position and Velocity
-	joint_state.position = actual_joint_position_ = rtde_receive_ -> getActualQ();
-	joint_state.velocity = rtde_receive_ -> getActualQd();
+		// Create JointState Message
+		sensor_msgs::JointState joint_state;
 
-	// Publish JointState
-	joint_state_pub_.publish(joint_state);
+		// Read Joint Position and Velocity
+		joint_state.position = actual_joint_position_ = rtde_receive_ -> getActualQ();
+		joint_state.velocity = rtde_receive_ -> getActualQd();
+
+		// Publish JointState
+		joint_state_pub_.publish(joint_state);
+	}
 }
 
 void RTDEController::publishTCPPose()
 {
-	// Read TCP Position
-	std::vector<double> tcp_pose = rtde_receive_ -> getActualTCPPose();
+	while (ros::ok())
+	{
+		// Callback Readings
+		ros::spinOnce();
 
-	// Convert RTDE Pose to Geometry Pose
-	actual_cartesian_pose_ = RTDE2Pose(tcp_pose);
+		// Read TCP Position
+		std::vector<double> tcp_pose = rtde_receive_ -> getActualTCPPose();
 
-	// Publish TCP Pose
-	tcp_pose_pub_.publish(actual_cartesian_pose_);
+		// Convert RTDE Pose to Geometry Pose
+		actual_cartesian_pose_ = RTDE2Pose(tcp_pose);
+
+		// Publish TCP Pose
+		tcp_pose_pub_.publish(actual_cartesian_pose_);
+	}
 }
 
 void RTDEController::publishFTSensor()
 {
-	// Read FT Sensor Forces
-	std::vector<double> tcp_forces = rtde_receive_ -> getActualTCPForce();
+	while (ros::ok())
+	{
+		// Callback Readings
+		ros::spinOnce();
 
-	// Create Wrench Message
-	geometry_msgs::Wrench forces;
-	forces.force.x = tcp_forces[0];
-	forces.force.y = tcp_forces[1];
-	forces.force.z = tcp_forces[2];
-	forces.torque.x = tcp_forces[3];
-	forces.torque.y = tcp_forces[4];
-	forces.torque.z = tcp_forces[5];
+		// Read FT Sensor Forces
+		std::vector<double> tcp_forces = rtde_receive_ -> getActualTCPForce();
 
-	// Publish FTSensor Forces
-	ft_sensor_pub_.publish(forces);
+		// Create Wrench Message
+		geometry_msgs::Wrench forces;
+		forces.force.x = tcp_forces[0];
+		forces.force.y = tcp_forces[1];
+		forces.force.z = tcp_forces[2];
+		forces.torque.x = tcp_forces[3];
+		forces.torque.y = tcp_forces[4];
+		forces.torque.z = tcp_forces[5];
+
+		// Publish FTSensor Forces
+		ft_sensor_pub_.publish(forces);
+	}
 }
 
 void RTDEController::publishTrajectoryExecuted()
@@ -420,11 +438,6 @@ void RTDEController::spinner()
 {
 	// Callback Readings
 	ros::spinOnce();
-
-	// Publish JointState and TCPPose
-	publishJointState();
-	publishTCPPose();
-	publishFTSensor();
 
 	// Move to New Trajectory Goal
 	if (new_trajectory_received_)
@@ -551,6 +564,12 @@ int main(int argc, char **argv) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
 	sigaction(SIGINT, &sa, NULL);
+
+	// Publish JointState, TCPPose, FTSensor in separate Threads
+	std::thread publishJointState (&RTDEController::publishJointState, rtde);
+	std::thread publishTCPPose    (&RTDEController::publishTCPPose,    rtde);
+	std::thread publishFTSensor   (&RTDEController::publishFTSensor,   rtde);
+	ros::Duration(1).sleep();
 
 	while (ros::ok()) {
 

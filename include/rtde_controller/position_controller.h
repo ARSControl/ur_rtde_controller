@@ -2,6 +2,7 @@
 #define POSITION_CONTROLLER_H
 
 #include <ros/ros.h>
+#include <thread>
 
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>
@@ -35,6 +36,11 @@ class RTDEController {
     ~RTDEController();
 
     void spinner();
+
+    // ---- ROS PUBLISHER FUNCTIONS ---- //
+    void publishJointState();
+    void publishTCPPose();
+    void publishFTSensor();
 
   private:
 
@@ -92,13 +98,8 @@ class RTDEController {
     bool stopFreedriveModeCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
     bool GetSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res);
 
-    // ---- UR RTDE FUNCTIONS ---- //
-    void publishJointState();
-    void publishTCPPose();
-    void publishFTSensor();
-    void publishTrajectoryExecuted();
-
     // ---- UTILITIES FUNCTIONS ---- //
+    void publishTrajectoryExecuted();
     std::vector<double> Pose2RTDE(geometry_msgs::Pose pose);
     geometry_msgs::Pose RTDE2Pose(std::vector<double> rtde_pose);
 

@@ -36,6 +36,11 @@ class RTDEController {
 
     void spinner();
 
+    // ---- ROS PUBLISHER FUNCTIONS ---- //
+    void publishJointState();
+    void publishTCPPose();
+    void publishFTSensor();
+
   private:
 
     // ---- ROS - NODE HANDLE & RATE ---- //
@@ -104,18 +109,13 @@ class RTDEController {
     bool stopFreedriveModeCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
     bool GetSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res);
 
-    // ---- UR RTDE FUNCTIONS ---- //
-    void publishJointState();
-    void publishTCPPose();
-    void publishFTSensor();
-    void publishTrajectoryExecuted();
-
     // ---- EIGEN FUNCTIONS ---- //
     Eigen::Matrix<double, 4, 4> pose2eigen(geometry_msgs::Pose pose);
     Eigen::VectorXd computePoseError(Eigen::Matrix<double, 4, 4> T_des, Eigen::Matrix<double, 4, 4> T);
     bool isPoseReached(Eigen::VectorXd position_error, double movement_precision);
 
     // ---- UTILITIES FUNCTIONS ---- //
+    void publishTrajectoryExecuted();
     std::vector<double> Pose2RTDE(geometry_msgs::Pose pose);
     geometry_msgs::Pose RTDE2Pose(std::vector<double> rtde_pose);
 
