@@ -58,26 +58,52 @@ RTDEController::~RTDEController()
 
 void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg)
 {
-	//https://gitlab.com/sdurobotics/ur_rtde/-/blob/master/src/rtde_control_interface.cpp
-	// rtde_control_ -> movePath
+	//TODO: Spline Interpolation and more... 
 	desired_trajectory_ = msg;
 	new_trajectory_received_ = true;
 }
 
 void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg)
 {
+	// Check Input Data Size
+	if (msg.positions.size() != 6) {ROS_ERROR("ERROR: Received Joint Position Goal Size != 6"); return;}
+	if (msg.time_from_start.toSec() == 0) {ROS_ERROR("ERROR: Desired Time = 0"); return;}
+
 	// Get Desired and Actual Joint Pose
 	Eigen::VectorXd desired_pose = Eigen::VectorXd::Map(msg.positions.data(), msg.positions.size());
 	Eigen::VectorXd actual_pose  = Eigen::VectorXd::Map(actual_joint_position_.data(), actual_joint_position_.size());
 
-	// Compute Velocity of Farthest Joint
-	double desired_velocity = (desired_pose - actual_pose).array().abs().maxCoeff() / msg.time_from_start.toSec();
+	// Check Joint Limits
+	if ((desired_pose.array().abs() > JOINT_LIMITS).any()) {ROS_ERROR("ERROR: Received Joint Position Outside Joint Limits"); return;}
+
+	// Path Length
+	double LP = (desired_pose - actual_pose).array().abs().maxCoeff();
+	double velocity = 1.0, acceleration = ACCELERATION;
+	double T = msg.time_from_start.toSec();
+
+	// Check Acceleration is Sufficient to Reach the Goal in the Desired Time
+	if (acceleration < 4 * LP / std::pow(T,2))
+	{
+		T = std::sqrt(4 * LP / acceleration);
+		ROS_WARN_STREAM("Robot Acceleration is Not Sufficient to Reach the Goal in the Desired Time | Used the Minimum Time: " << T);
+	}
+
+	// Compute Velocity
+	double ta = T/2.0 - 0.5 * std::sqrt((std::pow(T,2) * acceleration - 4.0 * LP) / acceleration + 10e-12);
+	velocity = ta * acceleration;
+
+	// Check Velocity Limits
+	if (velocity > JOINT_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity"); return;}
 
 	// Move to Joint Goal
-	rtde_control_ -> moveJ(msg.positions, desired_velocity);
+	rtde_control_ -> moveJ(msg.positions, velocity, acceleration);
 
 	// Publish Trajectory Executed
 	publishTrajectoryExecuted();
+
+	// Reset Variables
+	new_trajectory_received_ = false;
+
 }
 
 void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPoint msg)
@@ -90,17 +116,20 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPo
 
 	// Publish Trajectory Executed
 	publishTrajectoryExecuted();
+
+	// Reset Variables
+	new_trajectory_received_ = false;
+
 }
 
 bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
-	// Stop Robot in Joint Space
-	rtde_control_ -> stopJ(2.0);
+	// Stop Robot in Velocity
+	res.success = rtde_control_ -> speedStop(2.0);
 
 	// Reset Booleans
 	new_trajectory_received_ = false;
 
-	res.success = true;
 	return res.success;
 }
 
@@ -253,7 +282,7 @@ bool RTDEController::GetSafetyStatusCallback(ur_rtde_controller::GetRobotStatus:
 
 void RTDEController::publishJointState()
 {
-	while (ros::ok())
+	while (ros::ok() && !shutdown_)
 	{
 		// Create JointState Message
 		sensor_msgs::JointState joint_state;
@@ -264,12 +293,15 @@ void RTDEController::publishJointState()
 
 		// Publish JointState
 		joint_state_pub_.publish(joint_state);
+
+		// Sleep to ROS Rate
+		ros_rate_.sleep();
 	}
 }
 
 void RTDEController::publishTCPPose()
 {
-	while (ros::ok())
+	while (ros::ok() && !shutdown_)
 	{
 		// Read TCP Position
 		std::vector<double> tcp_pose = rtde_receive_ -> getActualTCPPose();
@@ -279,12 +311,15 @@ void RTDEController::publishTCPPose()
 
 		// Publish TCP Pose
 		tcp_pose_pub_.publish(pose);
+
+		// Sleep to ROS Rate
+		ros_rate_.sleep();
 	}
 }
 
 void RTDEController::publishFTSensor()
 {
-	while (ros::ok())
+	while (ros::ok() && !shutdown_)
 	{
 		// Read FT Sensor Forces
 		std::vector<double> tcp_forces = rtde_receive_ -> getActualTCPForce();
@@ -300,6 +335,9 @@ void RTDEController::publishFTSensor()
 
 		// Publish FTSensor Forces
 		ft_sensor_pub_.publish(forces);
+
+		// Sleep to ROS Rate
+		ros_rate_.sleep();
 	}
 }
 
@@ -403,19 +441,33 @@ void RTDEController::spinner()
 
 }
 
-// Create a Null-Pointer to the RTDE Class
+// Create Null-Pointers to the RTDE Class and the Threads
 RTDEController *rtde = nullptr;
+std::thread *publishJointState = nullptr;
+std::thread *publishTCPPose    = nullptr;
+std::thread *publishFTSensor   = nullptr;
 
 void signalHandler(int signal)
 {
 	std::cout << "\nKeyboard Interrupt Received\n";
+
+	// Set Shutdown Trigger
+	rtde -> shutdown_ = true;
+
+	// Join Threads on Main
+	publishJointState -> join();
+	publishTCPPose    -> join();
+	publishFTSensor   -> join();
+
+	// Call Destructor
 	delete rtde;
 	exit(signal);
 }
 
 int main(int argc, char **argv) {
 
-    ros::init(argc, argv, "ur_rtde_controller", ros::init_options::NoSigintHandler);
+    // ros::init(argc, argv, "ur_rtde_controller", ros::init_options::NoSigintHandler);
+    ros::init(argc, argv, "ur_rtde_controller");
 
     ros::NodeHandle nh;
     ros::Rate loop_rate = 500;
@@ -431,9 +483,9 @@ int main(int argc, char **argv) {
 	sigaction(SIGINT, &sa, NULL);
 
 	// Publish JointState, TCPPose, FTSensor in separate Threads
-	std::thread publishJointState (&RTDEController::publishJointState, rtde);
-	std::thread publishTCPPose    (&RTDEController::publishTCPPose,    rtde);
-	std::thread publishFTSensor   (&RTDEController::publishFTSensor,   rtde);
+	publishJointState = new std::thread(&RTDEController::publishJointState, rtde);
+	publishTCPPose    = new std::thread(&RTDEController::publishTCPPose,    rtde);
+	publishFTSensor   = new std::thread(&RTDEController::publishFTSensor,   rtde);
 	ros::Duration(1).sleep();
 
     while (ros::ok()) {
@@ -442,6 +494,12 @@ int main(int argc, char **argv) {
 
     }
 
+	// Join Threads on Main
+	publishJointState -> join();
+	publishTCPPose    -> join();
+	publishFTSensor   -> join();
+
+	// Call Destructor
     delete rtde;
 
 return 0;

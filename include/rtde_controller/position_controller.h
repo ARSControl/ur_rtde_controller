@@ -27,6 +27,16 @@
 
 #include <Eigen/Dense>
 
+#define BLEND_MAX 2.0
+#define BLEND_MIN 0.0
+#define JOINT_LIMITS 6.28
+#define JOINT_VELOCITY_MAX 3.14
+#define JOINT_VELOCITY_MIN 0.0
+#define JOINT_ACCELERATION_MAX 40.0
+#define JOINT_ACCELERATION_MIN 0.0
+
+#define ACCELERATION 4.0
+
 class RTDEController {
 
   public:
@@ -41,6 +51,7 @@ class RTDEController {
     void publishJointState();
     void publishTCPPose();
     void publishFTSensor();
+    bool shutdown_ = false;
 
   private:
 
@@ -54,6 +65,7 @@ class RTDEController {
 
     // ---- GLOBAL VARIABLES ---- //
     std::vector<double> actual_joint_position_;
+    std::vector<double> actual_joint_velocity_;
     geometry_msgs::Pose actual_cartesian_pose_;
     trajectory_msgs::JointTrajectory desired_trajectory_;
     bool new_trajectory_received_ = false;
