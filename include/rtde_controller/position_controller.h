@@ -131,6 +131,11 @@ class RTDEController {
     std::vector<double> Pose2RTDE(geometry_msgs::Pose pose);
     geometry_msgs::Pose RTDE2Pose(std::vector<double> rtde_pose);
 
+    // ---- EIGEN FUNCTIONS ---- //
+    Eigen::Matrix<double, 4, 4> pose2eigen(geometry_msgs::Pose pose);
+    Eigen::VectorXd computePoseError(Eigen::Matrix<double, 4, 4> T_des, Eigen::Matrix<double, 4, 4> T);
+    bool isPoseReached(Eigen::VectorXd position_error, double movement_precision);
+
 };
 
 #endif /* POSITION_CONTROLLER_H */

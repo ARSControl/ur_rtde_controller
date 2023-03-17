@@ -450,6 +450,47 @@ geometry_msgs::Pose RTDEController::RTDE2Pose(std::vector<double> rtde_pose)
 	return pose;
 }
 
+Eigen::Matrix<double, 4, 4> RTDEController::pose2eigen(geometry_msgs::Pose pose)
+{
+	Eigen::Matrix<double, 4, 4> T = Eigen::Matrix<double, 4, 4>::Identity();
+
+	T(0, 3) = pose.position.x;
+	T(1, 3) = pose.position.y;
+	T(2, 3) = pose.position.z;
+
+	Eigen::Quaterniond q(pose.orientation.w, pose.orientation.x,
+    	                 pose.orientation.y, pose.orientation.z);
+
+	T.block<3, 3>(0, 0) = q.normalized().toRotationMatrix();
+
+	return T;
+}
+
+Eigen::VectorXd RTDEController::computePoseError(Eigen::Matrix<double, 4, 4> T_des, Eigen::Matrix<double, 4, 4> T)
+{
+	Eigen::Matrix<double, 6, 1> err;
+
+	err.block<3, 1>(0, 0) = T.block<3, 1>(0, 3) - T_des.block<3, 1>(0, 3);
+
+	Eigen::Quaterniond orientation_quat_des = Eigen::Quaterniond(T_des.block<3, 3>(0, 0));
+	Eigen::Quaterniond orientation_quat = Eigen::Quaterniond(T.block<3, 3>(0, 0));
+
+	if (orientation_quat_des.coeffs().dot(orientation_quat.coeffs()) < 0.0) {orientation_quat.coeffs() << -orientation_quat.coeffs();}
+
+	Eigen::Quaterniond orientation_quat_error(orientation_quat.inverse() * orientation_quat_des);
+
+	err.block<3, 1>(3, 0) << orientation_quat_error.x(), orientation_quat_error.y(), orientation_quat_error.z();
+	err.block<3, 1>(3, 0) << -T.block<3, 3>(0, 0) * err.block<3, 1>(3, 0);
+
+	return err.col(0);
+}
+
+bool RTDEController::isPoseReached(Eigen::VectorXd position_error, double movement_precision)
+{
+	if ((Eigen::abs(position_error.array()) < movement_precision).all()) return true;
+	else return false;
+}
+
 void RTDEController::moveTrajectory()
 {
 	// Return if No Trajectory Received
