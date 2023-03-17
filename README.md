@@ -34,5 +34,4 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 
 * Launch RTDE Controller
   
-        roslaunch ur_rtde_controller position_controller.launch ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false
-        roslaunch ur_rtde_controller velocity_controller.launch ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false
+        roslaunch ur_rtde_controller rtde_controller.launch ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false
