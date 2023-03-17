@@ -142,7 +142,7 @@ void RTDEController::jointVelocityCallback(const std_msgs::Float64MultiArray msg
 	if (acceleration > JOINT_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration"); return;}
 
 	// Joint Velocity Publisher
-	rtde_control_ -> speedJ(desired_velocity, acceleration);
+	rtde_control_ -> speedJ(desired_velocity, acceleration, 0.002);
 }
 
 void RTDEController::cartesianVelocityCallback(const geometry_msgs::Twist msg)
@@ -169,11 +169,17 @@ void RTDEController::cartesianVelocityCallback(const geometry_msgs::Twist msg)
 	if (acceleration > TOOL_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration"); return;}
 
 	// Cartesian Velocity Publisher
-	rtde_control_ -> speedL(desired_cartesian_velocity, acceleration);
+	rtde_control_ -> speedL(desired_cartesian_velocity, acceleration, 0.002);
 }
+
+// TODO: Service for Setting the asyncronous_ boolean
 
 bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
+	// TODO: Fix Stop Robot when pposition movement -> try stopJ ? | speedStop works while speedJ
+	// rosservice call /ur_rtde/controllers/stop_robot 
+	// ERROR: service [/ur_rtde/controllers/stop_robot] responded with an error: b''
+	
 	// Stop Robot in Velocity
 	res.success = rtde_control_ -> speedStop(2.0);
 
