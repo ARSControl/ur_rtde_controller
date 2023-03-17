@@ -36,12 +36,12 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 
 	// ROS - Service Servers
 	stop_robot_server_			= nh_.advertiseService("/ur_rtde/controllers/stop_robot", &RTDEController::stopRobotCallback, this);
-	zeroFT_sensor_server_		= nh_.advertiseService("/ur_rtde/zeroFTSensor", &RTDEController::zeroFTSensorCallback, this);
-    get_FK_server_				= nh_.advertiseService("/ur_rtde/getFK", &RTDEController::GetForwardKinematicCallback, this);
-    get_IK_server_				= nh_.advertiseService("/ur_rtde/getIK", &RTDEController::GetInverseKinematicCallback, this);
     start_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/start", &RTDEController::startFreedriveModeCallback, this);
     stop_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/stop",  &RTDEController::stopFreedriveModeCallback, this);
-	get_safety_status_server_	= nh_.advertiseService("/ur_rtde/getSafetyStatus",  &RTDEController::GetSafetyStatusCallback, this);
+	zeroFT_sensor_server_		= nh_.advertiseService("/ur_rtde/zeroFTSensor", &RTDEController::zeroFTSensorCallback, this);
+    get_FK_server_				= nh_.advertiseService("/ur_rtde/getFK", &RTDEController::getForwardKinematicCallback, this);
+    get_IK_server_				= nh_.advertiseService("/ur_rtde/getIK", &RTDEController::getInverseKinematicCallback, this);
+	get_safety_status_server_	= nh_.advertiseService("/ur_rtde/getSafetyStatus",  &RTDEController::getSafetyStatusCallback, this);
 
 	ros::Duration(1).sleep();
 	std::cout << std::endl;
@@ -133,63 +133,6 @@ bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs
 	return res.success;
 }
 
-bool RTDEController::RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request  &req, ur_rtde_controller::RobotiQGripperControl::Response &res)
-{
-	// Normalize Received Values
-	float position 	= req.position / 100;
-	float speed		= req.speed / 100;
-	float force		= req.force / 100;
-
-	// Move Gripper - Normalized Values (0.0 - 1.0)
-	try {res.status = robotiq_gripper_ -> move(position, speed, force, ur_rtde::RobotiqGripper::WAIT_FINISHED);}
-	catch (const std::exception &e) {return false;}
-
-	/************************************************************************************************
-	 *																								*
-	 * Object Detection Status																		*
-	 * 																								*
-	 * 	MOVING = 0                | Gripper is Opening or Closing									*
-	 * 	STOPPED_OUTER_OBJECT = 1  | Outer Object Detected while Opening the Gripper					*
-	 * 	STOPPED_INNER_OBJECT = 2  | Inner Object Detected while Closing the Gripper					*
-	 * 	AT_DEST = 3               | Requested Target Position Reached - No Object Detected			*
-	 * 																								*
- 	 ***********************************************************************************************/
-
-	res.success = true;
-	return res.success;
-}
-
-bool RTDEController::zeroFTSensorCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
-{
-	// Reset Force-Torque Sensor
-	res.success = rtde_control_ -> zeroFtSensor();
-	return res.success;
-}
-
-bool RTDEController::GetForwardKinematicCallback(ur_rtde_controller::GetForwardKinematic::Request  &req, ur_rtde_controller::GetForwardKinematic::Response &res)
-{
-	// Compute Forward Kinematic
-	std::vector<double> tcp_pose = rtde_control_ -> getForwardKinematics(req.joint_position, {0.0,0.0,0.0,0.0,0.0,0.0});
-
-	// Convert RTDE Pose to Geometry Pose
-	res.tcp_position = RTDE2Pose(tcp_pose);
-
-	res.success = true;
-	return res.success;
-}
-
-bool RTDEController::GetInverseKinematicCallback(ur_rtde_controller::GetInverseKinematic::Request  &req, ur_rtde_controller::GetInverseKinematic::Response &res)
-{
-	// Convert Geometry Pose to RTDE Pose
-	std::vector<double> tcp_pose = Pose2RTDE(req.tcp_position);
-
-	// Compute Inverse Kinematic
-	res.joint_position = rtde_control_ -> getInverseKinematics(tcp_pose);
-
-	res.success = true;
-	return res.success;
-}
-
 bool RTDEController::startFreedriveModeCallback(ur_rtde_controller::StartFreedriveMode::Request  &req, ur_rtde_controller::StartFreedriveMode::Response &res)
 {
 	// freeAxes = [1,0,0,0,0,0] 	-> The robot is compliant in the x direction relative to the feature.
@@ -207,7 +150,38 @@ bool RTDEController::stopFreedriveModeCallback(std_srvs::Trigger::Request &req, 
 	return res.success;
 }
 
-bool RTDEController::GetSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res)
+bool RTDEController::zeroFTSensorCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+	// Reset Force-Torque Sensor
+	res.success = rtde_control_ -> zeroFtSensor();
+	return res.success;
+}
+
+bool RTDEController::getForwardKinematicCallback(ur_rtde_controller::GetForwardKinematic::Request  &req, ur_rtde_controller::GetForwardKinematic::Response &res)
+{
+	// Compute Forward Kinematic
+	std::vector<double> tcp_pose = rtde_control_ -> getForwardKinematics(req.joint_position, {0.0,0.0,0.0,0.0,0.0,0.0});
+
+	// Convert RTDE Pose to Geometry Pose
+	res.tcp_position = RTDE2Pose(tcp_pose);
+
+	res.success = true;
+	return res.success;
+}
+
+bool RTDEController::getInverseKinematicCallback(ur_rtde_controller::GetInverseKinematic::Request  &req, ur_rtde_controller::GetInverseKinematic::Response &res)
+{
+	// Convert Geometry Pose to RTDE Pose
+	std::vector<double> tcp_pose = Pose2RTDE(req.tcp_position);
+
+	// Compute Inverse Kinematic
+	res.joint_position = rtde_control_ -> getInverseKinematics(tcp_pose);
+
+	res.success = true;
+	return res.success;
+}
+
+bool RTDEController::getSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res)
 {
 	/************************************************
 	 * 												*
@@ -275,6 +249,32 @@ bool RTDEController::GetSafetyStatusCallback(ur_rtde_controller::GetRobotStatus:
 	// Get Safety Status Bits
 	res.safety_status_bits = int(rtde_receive_ -> getSafetyStatusBits());
 	res.safety_status_bits_msg = safety_status_bits_msg[res.safety_status_bits];
+
+	res.success = true;
+	return res.success;
+}
+
+bool RTDEController::RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request  &req, ur_rtde_controller::RobotiQGripperControl::Response &res)
+{
+	// Normalize Received Values
+	float position 	= req.position / 100;
+	float speed		= req.speed / 100;
+	float force		= req.force / 100;
+
+	// Move Gripper - Normalized Values (0.0 - 1.0)
+	try {res.status = robotiq_gripper_ -> move(position, speed, force, ur_rtde::RobotiqGripper::WAIT_FINISHED);}
+	catch (const std::exception &e) {return false;}
+
+	/************************************************************************************************
+	 *																								*
+	 * Object Detection Status																		*
+	 * 																								*
+	 * 	MOVING = 0                | Gripper is Opening or Closing									*
+	 * 	STOPPED_OUTER_OBJECT = 1  | Outer Object Detected while Opening the Gripper					*
+	 * 	STOPPED_INNER_OBJECT = 2  | Inner Object Detected while Closing the Gripper					*
+	 * 	AT_DEST = 3               | Requested Target Position Reached - No Object Detected			*
+	 * 																								*
+ 	 ***********************************************************************************************/
 
 	res.success = true;
 	return res.success;
@@ -488,11 +488,8 @@ int main(int argc, char **argv) {
 	publishFTSensor   = new std::thread(&RTDEController::publishFTSensor,   rtde);
 	ros::Duration(1).sleep();
 
-    while (ros::ok()) {
-
-        rtde -> spinner();
-
-    }
+	// Main Spinner
+    while (ros::ok()) {rtde -> spinner();}
 
 	// Join Threads on Main
 	publishJointState -> join();

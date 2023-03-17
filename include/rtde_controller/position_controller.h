@@ -94,21 +94,21 @@ class RTDEController {
 
     // ---- ROS - SERVICE SERVERS & CALLBACKS ---- //
     ros::ServiceServer stop_robot_server_;
-    ros::ServiceServer robotiq_gripper_server_;
+    ros::ServiceServer start_FreedriveMode_server_;
+    ros::ServiceServer stop_FreedriveMode_server_;
     ros::ServiceServer zeroFT_sensor_server_;
     ros::ServiceServer get_FK_server_;
     ros::ServiceServer get_IK_server_;
-    ros::ServiceServer start_FreedriveMode_server_;
-    ros::ServiceServer stop_FreedriveMode_server_;
     ros::ServiceServer get_safety_status_server_;
-    bool RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request  &req, ur_rtde_controller::RobotiQGripperControl::Response &res);
+    ros::ServiceServer robotiq_gripper_server_;
     bool stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
-    bool zeroFTSensorCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
-    bool GetForwardKinematicCallback(ur_rtde_controller::GetForwardKinematic::Request  &req, ur_rtde_controller::GetForwardKinematic::Response &res);
-    bool GetInverseKinematicCallback(ur_rtde_controller::GetInverseKinematic::Request  &req, ur_rtde_controller::GetInverseKinematic::Response &res);
     bool startFreedriveModeCallback(ur_rtde_controller::StartFreedriveMode::Request  &req, ur_rtde_controller::StartFreedriveMode::Response &res);
     bool stopFreedriveModeCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
-    bool GetSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res);
+    bool zeroFTSensorCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
+    bool getForwardKinematicCallback(ur_rtde_controller::GetForwardKinematic::Request  &req, ur_rtde_controller::GetForwardKinematic::Response &res);
+    bool getInverseKinematicCallback(ur_rtde_controller::GetInverseKinematic::Request  &req, ur_rtde_controller::GetInverseKinematic::Response &res);
+    bool getSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res);
+    bool RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request  &req, ur_rtde_controller::RobotiQGripperControl::Response &res);
 
     // ---- UTILITIES FUNCTIONS ---- //
     void publishTrajectoryExecuted();
