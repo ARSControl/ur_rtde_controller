@@ -24,24 +24,26 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	}
 
     // ROS - Publishers
-	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState>("/joint_states", 1);
-	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::Pose>("/ur_rtde/cartesian_pose", 1);
-	ft_sensor_pub_			 = nh_.advertise<geometry_msgs::Wrench>("/ur_rtde/ft_sensor", 1);
-	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>("/ur_rtde/trajectory_executed", 1);
+	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState> ("/joint_states", 1);
+	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::Pose>	  ("/ur_rtde/cartesian_pose", 1);
+	ft_sensor_pub_			 = nh_.advertise<geometry_msgs::Wrench>   ("/ur_rtde/ft_sensor", 1);
+	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>		  ("/ur_rtde/trajectory_executed", 1);
 
     // ROS - Subscribers
 	// trajectory_command_sub_		= nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 1, &RTDEController::jointTrajectoryCallback, this);
-	joint_goal_command_sub_		= nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command", 1, &RTDEController::jointGoalCallback, this);
-	cartesian_goal_command_sub_	= nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command", 1, &RTDEController::cartesianGoalCallback, this);
+	joint_goal_command_sub_			= nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command",        1, &RTDEController::jointGoalCallback, this);
+	cartesian_goal_command_sub_		= nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command",    1, &RTDEController::cartesianGoalCallback, this);
+	joint_velocity_command_sub_		= nh_.subscribe("/ur_rtde/controllers/joint_velocity_controller/command",     1, &RTDEController::jointVelocityCallback, this);
+	cartesian_velocity_command_sub_	= nh_.subscribe("/ur_rtde/controllers/cartesian_velocity_controller/command", 1, &RTDEController::cartesianVelocityCallback, this);
 
 	// ROS - Service Servers
 	stop_robot_server_			= nh_.advertiseService("/ur_rtde/controllers/stop_robot", &RTDEController::stopRobotCallback, this);
-    start_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/start", &RTDEController::startFreedriveModeCallback, this);
-    stop_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/stop",  &RTDEController::stopFreedriveModeCallback, this);
-	zeroFT_sensor_server_		= nh_.advertiseService("/ur_rtde/zeroFTSensor", &RTDEController::zeroFTSensorCallback, this);
-    get_FK_server_				= nh_.advertiseService("/ur_rtde/getFK", &RTDEController::getForwardKinematicCallback, this);
-    get_IK_server_				= nh_.advertiseService("/ur_rtde/getIK", &RTDEController::getInverseKinematicCallback, this);
-	get_safety_status_server_	= nh_.advertiseService("/ur_rtde/getSafetyStatus",  &RTDEController::getSafetyStatusCallback, this);
+    start_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/start", 	  &RTDEController::startFreedriveModeCallback, this);
+    stop_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/stop",  	  &RTDEController::stopFreedriveModeCallback, this);
+	zeroFT_sensor_server_		= nh_.advertiseService("/ur_rtde/zeroFTSensor", 		  &RTDEController::zeroFTSensorCallback, this);
+    get_FK_server_				= nh_.advertiseService("/ur_rtde/getFK", 				  &RTDEController::getForwardKinematicCallback, this);
+    get_IK_server_				= nh_.advertiseService("/ur_rtde/getIK", 				  &RTDEController::getInverseKinematicCallback, this);
+	get_safety_status_server_	= nh_.advertiseService("/ur_rtde/getSafetyStatus",  	  &RTDEController::getSafetyStatusCallback, this);
 
 	ros::Duration(1).sleep();
 	std::cout << std::endl;
@@ -74,11 +76,11 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoi
 	Eigen::VectorXd actual_pose  = Eigen::VectorXd::Map(actual_joint_position_.data(), actual_joint_position_.size());
 
 	// Check Joint Limits
-	if ((desired_pose.array().abs() > JOINT_LIMITS).any()) {ROS_ERROR("ERROR: Received Joint Position Outside Joint Limits"); return;}
+	if ((desired_pose.array().abs() > UR_JOINT_LIMITS).any()) {ROS_ERROR("ERROR: Received Joint Position Outside Joint Limits"); return;}
 
 	// Path Length
 	double LP = (desired_pose - actual_pose).array().abs().maxCoeff();
-	double velocity = 1.0, acceleration = ACCELERATION;
+	double velocity = 1.0, acceleration = 4.0;
 	double T = msg.time_from_start.toSec();
 
 	// Check Acceleration is Sufficient to Reach the Goal in the Desired Time
@@ -93,17 +95,13 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoi
 	velocity = ta * acceleration;
 
 	// Check Velocity Limits
-	if (velocity > JOINT_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity"); return;}
+	if (velocity > UR_JOINT_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity"); return;}
 
 	// Move to Joint Goal
 	rtde_control_ -> moveJ(msg.positions, velocity, acceleration);
 
 	// Publish Trajectory Executed
 	publishTrajectoryExecuted();
-
-	// Reset Variables
-	new_trajectory_received_ = false;
-
 }
 
 void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPoint msg)
@@ -111,15 +109,64 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPo
 	// Convert Geometry Pose to RTDE Pose
 	std::vector<double> desired_pose = Pose2RTDE(msg.cartesian_pose);
 
+	// Check Tool Velocity Limits
+	if (msg.velocity > UR_TOOL_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity"); return;}
+
 	// Move to Linear Goal
 	rtde_control_ -> moveL(desired_pose, msg.velocity);
 
 	// Publish Trajectory Executed
 	publishTrajectoryExecuted();
+}
 
-	// Reset Variables
-	new_trajectory_received_ = false;
+void RTDEController::jointVelocityCallback(const std_msgs::Float64MultiArray msg)
+{
+	// Check Input Data Size
+	if (msg.data.size() != 6) {ROS_ERROR("ERROR: Received Joint Velocity Size != 6"); return;}
 
+	// Get Current and Desired Joint Velocity
+	std::vector<double> current_velocity = rtde_receive_ -> getActualQd();
+	std::vector<double> desired_velocity = msg.data;
+
+	// Compute Velocity Difference
+	Eigen::VectorXd velocity_difference = Eigen::VectorXd::Map(desired_velocity.data(), desired_velocity.size()) 
+										- Eigen::VectorXd::Map(current_velocity.data(), current_velocity.size());
+
+	// Compute MAX Acceleration
+	double acceleration = velocity_difference.array().abs().maxCoeff() / ros_rate_.expectedCycleTime().toSec();
+
+	// Check Acceleration Limits
+	if (acceleration > UR_JOINT_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration"); return;}
+
+	// Joint Velocity Publisher
+	rtde_control_ -> speedJ(desired_velocity, acceleration);
+}
+
+void RTDEController::cartesianVelocityCallback(const geometry_msgs::Twist msg)
+{
+	// Get Current Cartesian Velocity
+	std::vector<double> current_velocity = rtde_receive_ -> getActualTCPSpeed();
+
+	// Create Desired Velocity Vector
+	std::vector<double> desired_cartesian_velocity;
+	desired_cartesian_velocity.push_back(msg.linear.x);
+	desired_cartesian_velocity.push_back(msg.linear.y);
+	desired_cartesian_velocity.push_back(msg.linear.z);
+	desired_cartesian_velocity.push_back(msg.angular.x);
+	desired_cartesian_velocity.push_back(msg.angular.y);
+	desired_cartesian_velocity.push_back(msg.angular.z);
+
+	// TODO: Compute Velocity Difference
+
+	// TODO: Compute MAX Acceleration
+	// double acceleration = velocity_difference.array().abs().maxCoeff() / ros_rate_.expectedCycleTime().toSec();
+	double acceleration = 0.25;
+
+	// Check Acceleration Limits
+	if (acceleration > UR_TOOL_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration"); return;}
+
+	// Cartesian Velocity Publisher
+	rtde_control_ -> speedL(desired_cartesian_velocity, acceleration);
 }
 
 bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
@@ -127,8 +174,8 @@ bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs
 	// Stop Robot in Velocity
 	res.success = rtde_control_ -> speedStop(2.0);
 
-	// Reset Booleans
-	new_trajectory_received_ = false;
+	// Reset Booleans Variables
+	resetBooleans();
 
 	return res.success;
 }
@@ -341,12 +388,21 @@ void RTDEController::publishFTSensor()
 	}
 }
 
+void RTDEController::resetBooleans()
+{
+	// Reset Booleans Variables
+	new_trajectory_received_ = false;
+}
+
 void RTDEController::publishTrajectoryExecuted()
 {
 	// Publish Trajectory Executed Message
 	std_msgs::Bool trajectory_executed;
 	trajectory_executed.data = true;
 	trajectory_executed_pub_.publish(trajectory_executed);
+
+	// Reset Booleans Variables
+	resetBooleans();
 }
 
 std::vector<double> RTDEController::Pose2RTDE(geometry_msgs::Pose pose)
@@ -393,53 +449,38 @@ geometry_msgs::Pose RTDEController::RTDE2Pose(std::vector<double> rtde_pose)
 
 	return pose;
 }
-/* 
-void RTDEController::spinner()
-{
-	// Callback Readings
-	ros::spinOnce();
 
-	// Update Actual Joint and TCP Positions
-	actual_joint_position_ = rtde_receive_ -> getActualQ();
-	actual_cartesian_pose_ = RTDE2Pose(rtde_receive_ -> getActualTCPPose());
+void RTDEController::moveTrajectory()
+{
+	// Return if No Trajectory Received
+	if (!new_trajectory_received_) return;
+
+	// Create Next Point
+	std::vector<std::vector<double>> next_point;
+	next_point.push_back(desired_trajectory_.points[0].positions);
+	next_point.push_back(desired_trajectory_.points[0].velocities);
+	next_point.push_back(desired_trajectory_.points[0].accelerations);
+	next_point.push_back(desired_trajectory_.points[0].effort);
 
 	// Move to New Trajectory Goal
-	if (new_trajectory_received_)
+	// TODO: Move to the First Trajectory Point
+	rtde_control_ -> moveJ(desired_trajectory_.points[0].positions);
+
+	// Erase Point from Trajectory
+	desired_trajectory_.points.erase(desired_trajectory_.points.begin());
+
+	// Check for Trajectory Ending
+	if (desired_trajectory_.points.size() == 0)
 	{
+		// Stop Robot
+		rtde_control_ -> stopJ(2.0);
 
-		// Create Next Point
-		std::vector<std::vector<double>> next_point;
-		next_point.push_back(desired_trajectory_.points[0].positions);
-		next_point.push_back(desired_trajectory_.points[0].velocities);
-		next_point.push_back(desired_trajectory_.points[0].accelerations);
-		next_point.push_back(desired_trajectory_.points[0].effort);
-
-		// TODO: Move to the First Trajectory Point
-		rtde_control_ -> moveJ(desired_trajectory_.points[0].positions);
-
-		// Erase Point from Trajectory
-		desired_trajectory_.points.erase(desired_trajectory_.points.begin());
-
-		// Check for Trajectory Ending
-		if (desired_trajectory_.points.size() == 0) 
-		{
-
-			new_trajectory_received_ = false;
-
-			// Publish Trajectory Executed
-			publishTrajectoryExecuted();
-
-			// Stop Robot
-			rtde_control_ -> stopJ(2.0);
-
-		}
-
+		// Publish Trajectory Executed
+		publishTrajectoryExecuted();
 	}
 
-	// Sleep until ROS Rate
-	ros_rate_.sleep();
+}
 
-} */
 /* 
 void RTDEController::spinner()
 {
@@ -519,9 +560,11 @@ void RTDEController::spinner()
 	actual_joint_velocity_ = rtde_receive_ -> getActualQd();
 	actual_cartesian_pose_ = RTDE2Pose(rtde_receive_ -> getActualTCPPose());
 
+	// Trajectory Controller
+	moveTrajectory();
+
 	// Sleep until ROS Rate
 	ros_rate_.sleep();
-
 }
 
 // Create Null-Pointers to the RTDE Class and the Threads
@@ -573,6 +616,9 @@ int main(int argc, char **argv) {
 
 	// Main Spinner
     while (ros::ok()) {rtde -> spinner();}
+
+	// Set Shutdown Trigger
+	rtde -> shutdown_ = true;
 
 	// Join Threads on Main
 	publishJointState -> join();

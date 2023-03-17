@@ -11,9 +11,11 @@
 
 #include <trajectory_msgs/JointTrajectory.h>
 #include <trajectory_msgs/JointTrajectoryPoint.h>
+#include <sensor_msgs/JointState.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/Wrench.h>
-#include <sensor_msgs/JointState.h>
+#include <geometry_msgs/Twist.h>
+#include <std_msgs/Float64MultiArray.h>
 #include <std_msgs/Bool.h>
 
 #include <std_srvs/Trigger.h>
@@ -27,15 +29,21 @@
 
 #include <Eigen/Dense>
 
-#define BLEND_MAX 2.0
-#define BLEND_MIN 0.0
-#define JOINT_LIMITS 6.28
-#define JOINT_VELOCITY_MAX 3.14
-#define JOINT_VELOCITY_MIN 0.0
-#define JOINT_ACCELERATION_MAX 40.0
-#define JOINT_ACCELERATION_MIN 0.0
-
-#define ACCELERATION 4.0
+#define UR_JOINT_LIMITS 6.28
+#define UR_JOINT_VELOCITY_MAX 3.14
+#define UR_JOINT_VELOCITY_MIN 0.0
+#define UR_JOINT_ACCELERATION_MAX 40.0
+#define UR_JOINT_ACCELERATION_MIN 0.0
+#define UR_TOOL_VELOCITY_MAX 3.0
+#define UR_TOOL_VELOCITY_MIN 0
+#define UR_TOOL_ACCELERATION_MAX 150.0
+#define UR_TOOL_ACCELERATION_MIN 0
+#define UR_SERVO_LOOKAHEAD_TIME_MAX 0.2
+#define UR_SERVO_LOOKAHEAD_TIME_MIN 0.03
+#define UR_SERVO_GAIN_MAX 2000
+#define UR_SERVO_GAIN_MIN 100
+#define UR_BLEND_MAX 2.0
+#define UR_BLEND_MIN 0.0
 
 class RTDEController {
 
@@ -88,9 +96,13 @@ class RTDEController {
     ros::Subscriber trajectory_command_sub_;
     ros::Subscriber joint_goal_command_sub_;
     ros::Subscriber cartesian_goal_command_sub_;
+    ros::Subscriber joint_velocity_command_sub_;
+    ros::Subscriber cartesian_velocity_command_sub_;
     void jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg);
     void jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg);
     void cartesianGoalCallback(const ur_rtde_controller::CartesianPoint msg);
+    void jointVelocityCallback(const std_msgs::Float64MultiArray msg);
+    void cartesianVelocityCallback(const geometry_msgs::Twist msg);
 
     // ---- ROS - SERVICE SERVERS & CALLBACKS ---- //
     ros::ServiceServer stop_robot_server_;
@@ -110,7 +122,11 @@ class RTDEController {
     bool getSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res);
     bool RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request  &req, ur_rtde_controller::RobotiQGripperControl::Response &res);
 
+    // ---- MOVEMENT FUNCTIONS ---- //
+    void moveTrajectory();
+
     // ---- UTILITIES FUNCTIONS ---- //
+    void resetBooleans();
     void publishTrajectoryExecuted();
     std::vector<double> Pose2RTDE(geometry_msgs::Pose pose);
     geometry_msgs::Pose RTDE2Pose(std::vector<double> rtde_pose);
