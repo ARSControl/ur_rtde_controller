@@ -31,7 +31,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>		  ("/ur_rtde/trajectory_executed", 1);
 
     // ROS - Subscribers
-	// trajectory_command_sub_			= nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 		  1, &RTDEController::jointTrajectoryCallback, this);
+	// TODO: trajectory_command_sub_			= nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 		  1, &RTDEController::jointTrajectoryCallback, this);
 	joint_goal_command_sub_			= nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command",        1, &RTDEController::jointGoalCallback, this);
 	cartesian_goal_command_sub_		= nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command",    1, &RTDEController::cartesianGoalCallback, this);
 	joint_velocity_command_sub_		= nh_.subscribe("/ur_rtde/controllers/joint_velocity_controller/command",     1, &RTDEController::jointVelocityCallback, this);
