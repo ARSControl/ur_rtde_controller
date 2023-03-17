@@ -3,8 +3,9 @@
 RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh), ros_rate_(ros_rate)
 {
 	// Load Parameters
-	if(!nh_.param<std::string>("/ur_position_controller/ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
-	if(!nh_.param<bool>("/ur_position_controller/enable_gripper", enable_gripper, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper);}
+	if(!nh_.param<std::string>("/ur_rtde_controller/ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
+	if(!nh_.param<bool>("/ur_rtde_controller/enable_gripper", enable_gripper_, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper_);}
+	if(!nh_.param<bool>("/ur_rtde_controller/asynchronous", asynchronous_, "False")) {ROS_ERROR_STREAM("Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
 
 	// RTDE Library
 	rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP);
@@ -12,7 +13,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	rtde_io_  	  = new ur_rtde::RTDEIOInterface(ROBOT_IP);
 
 	// RobotiQ Gripper
-	if (enable_gripper) {
+	if (enable_gripper_) {
 
 		// Initialize Gripper
 		robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, true);
@@ -76,7 +77,7 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoi
 	Eigen::VectorXd actual_pose  = Eigen::VectorXd::Map(actual_joint_position_.data(), actual_joint_position_.size());
 
 	// Check Joint Limits
-	if ((desired_pose.array().abs() > UR_JOINT_LIMITS).any()) {ROS_ERROR("ERROR: Received Joint Position Outside Joint Limits"); return;}
+	if ((desired_pose.array().abs() > JOINT_LIMITS).any()) {ROS_ERROR("ERROR: Received Joint Position Outside Joint Limits"); return;}
 
 	// Path Length
 	double LP = (desired_pose - actual_pose).array().abs().maxCoeff();
@@ -95,13 +96,14 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoi
 	velocity = ta * acceleration;
 
 	// Check Velocity Limits
-	if (velocity > UR_JOINT_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity"); return;}
+	if (velocity > JOINT_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity"); return;}
 
 	// Move to Joint Goal
-	rtde_control_ -> moveJ(msg.positions, velocity, acceleration);
+	rtde_control_ -> moveJ(msg.positions, velocity, acceleration, asynchronous_);
 
 	// Publish Trajectory Executed
-	publishTrajectoryExecuted();
+	if (!asynchronous_) publishTrajectoryExecuted();
+	else new_async_joint_pose_received_ = true;
 }
 
 void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPoint msg)
@@ -110,13 +112,14 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPo
 	std::vector<double> desired_pose = Pose2RTDE(msg.cartesian_pose);
 
 	// Check Tool Velocity Limits
-	if (msg.velocity > UR_TOOL_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity"); return;}
+	if (msg.velocity > TOOL_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity"); return;}
 
 	// Move to Linear Goal
-	rtde_control_ -> moveL(desired_pose, msg.velocity);
+	rtde_control_ -> moveL(desired_pose, msg.velocity, 1.20, asynchronous_);
 
 	// Publish Trajectory Executed
-	publishTrajectoryExecuted();
+	if (!asynchronous_) publishTrajectoryExecuted();
+    else new_async_cartesian_pose_received_ = true;
 }
 
 void RTDEController::jointVelocityCallback(const std_msgs::Float64MultiArray msg)
@@ -136,7 +139,7 @@ void RTDEController::jointVelocityCallback(const std_msgs::Float64MultiArray msg
 	double acceleration = velocity_difference.array().abs().maxCoeff() / ros_rate_.expectedCycleTime().toSec();
 
 	// Check Acceleration Limits
-	if (acceleration > UR_JOINT_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration"); return;}
+	if (acceleration > JOINT_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration"); return;}
 
 	// Joint Velocity Publisher
 	rtde_control_ -> speedJ(desired_velocity, acceleration);
@@ -163,7 +166,7 @@ void RTDEController::cartesianVelocityCallback(const geometry_msgs::Twist msg)
 	double acceleration = 0.25;
 
 	// Check Acceleration Limits
-	if (acceleration > UR_TOOL_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration"); return;}
+	if (acceleration > TOOL_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration"); return;}
 
 	// Cartesian Velocity Publisher
 	rtde_control_ -> speedL(desired_cartesian_velocity, acceleration);
@@ -392,6 +395,8 @@ void RTDEController::resetBooleans()
 {
 	// Reset Booleans Variables
 	new_trajectory_received_ = false;
+    new_async_joint_pose_received_ = false;
+    new_async_cartesian_pose_received_ = false;
 }
 
 void RTDEController::publishTrajectoryExecuted()
@@ -591,6 +596,15 @@ void RTDEController::spinner()
 }
  */
 
+void RTDEController::checkAsyncMovements()
+{
+	// Return if No Async Movement Received
+	if (!new_async_joint_pose_received_ and !new_async_cartesian_pose_received_) return;
+
+	// Check if Async Operation is Ended -> Trajectory Executed
+	if (rtde_control_ -> getAsyncOperationProgress() < 0) publishTrajectoryExecuted();
+}
+
 void RTDEController::spinner()
 {
 	// Callback Readings
@@ -603,6 +617,9 @@ void RTDEController::spinner()
 
 	// Trajectory Controller
 	moveTrajectory();
+
+	// Check Async Movements Status
+	checkAsyncMovements();
 
 	// Sleep until ROS Rate
 	ros_rate_.sleep();

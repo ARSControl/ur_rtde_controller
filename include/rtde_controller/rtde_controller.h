@@ -29,21 +29,21 @@
 
 #include <Eigen/Dense>
 
-#define UR_JOINT_LIMITS 6.28
-#define UR_JOINT_VELOCITY_MAX 3.14
-#define UR_JOINT_VELOCITY_MIN 0.0
-#define UR_JOINT_ACCELERATION_MAX 40.0
-#define UR_JOINT_ACCELERATION_MIN 0.0
-#define UR_TOOL_VELOCITY_MAX 3.0
-#define UR_TOOL_VELOCITY_MIN 0
-#define UR_TOOL_ACCELERATION_MAX 150.0
-#define UR_TOOL_ACCELERATION_MIN 0
-#define UR_SERVO_LOOKAHEAD_TIME_MAX 0.2
-#define UR_SERVO_LOOKAHEAD_TIME_MIN 0.03
-#define UR_SERVO_GAIN_MAX 2000
-#define UR_SERVO_GAIN_MIN 100
-#define UR_BLEND_MAX 2.0
-#define UR_BLEND_MIN 0.0
+#define JOINT_LIMITS 6.28
+#define JOINT_VELOCITY_MAX 3.14
+#define JOINT_VELOCITY_MIN 0.0
+#define JOINT_ACCELERATION_MAX 40.0
+#define JOINT_ACCELERATION_MIN 0.0
+#define TOOL_VELOCITY_MAX 3.0
+#define TOOL_VELOCITY_MIN 0
+#define TOOL_ACCELERATION_MAX 150.0
+#define TOOL_ACCELERATION_MIN 0
+#define SERVO_LOOKAHEAD_TIME_MAX 0.2
+#define SERVO_LOOKAHEAD_TIME_MIN 0.03
+#define SERVO_GAIN_MAX 2000
+#define SERVO_GAIN_MIN 100
+#define BLEND_MAX 2.0
+#define BLEND_MIN 0.0
 
 class RTDEController {
 
@@ -69,7 +69,8 @@ class RTDEController {
 
     // ---- PARAMETERS ---- //
     std::string ROBOT_IP;
-    bool enable_gripper;
+    bool enable_gripper_;
+    bool asynchronous_;
 
     // ---- GLOBAL VARIABLES ---- //
     std::vector<double> actual_joint_position_;
@@ -77,6 +78,8 @@ class RTDEController {
     geometry_msgs::Pose actual_cartesian_pose_;
     trajectory_msgs::JointTrajectory desired_trajectory_;
     bool new_trajectory_received_ = false;
+    bool new_async_joint_pose_received_ = false;
+    bool new_async_cartesian_pose_received_ = false;
 
     // ---- UR RTDE LIBRARY ---- //
     ur_rtde::RTDEControlInterface* rtde_control_;
@@ -124,6 +127,7 @@ class RTDEController {
 
     // ---- MOVEMENT FUNCTIONS ---- //
     void moveTrajectory();
+    void checkAsyncMovements();
 
     // ---- UTILITIES FUNCTIONS ---- //
     void resetBooleans();
