@@ -30,7 +30,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>("/ur_rtde/trajectory_executed", 1);
 
     // ROS - Subscribers
-	trajectory_command_sub_		= nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 1, &RTDEController::jointTrajectoryCallback, this);
+	// trajectory_command_sub_		= nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 1, &RTDEController::jointTrajectoryCallback, this);
 	joint_goal_command_sub_		= nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command", 1, &RTDEController::jointGoalCallback, this);
 	cartesian_goal_command_sub_	= nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command", 1, &RTDEController::cartesianGoalCallback, this);
 
@@ -393,7 +393,7 @@ geometry_msgs::Pose RTDEController::RTDE2Pose(std::vector<double> rtde_pose)
 
 	return pose;
 }
-
+/* 
 void RTDEController::spinner()
 {
 	// Callback Readings
@@ -435,6 +435,89 @@ void RTDEController::spinner()
 		}
 
 	}
+
+	// Sleep until ROS Rate
+	ros_rate_.sleep();
+
+} */
+/* 
+void RTDEController::spinner()
+{
+	// Callback Readings
+	ros::spinOnce();
+
+	// Update Actual Joint and TCP Positions
+	actual_joint_position_ = rtde_receive_ -> getActualQ();
+	actual_joint_velocity_ = rtde_receive_ -> getActualQd();
+	actual_cartesian_pose_ = RTDE2Pose(rtde_receive_ -> getActualTCPPose());
+
+	// Move to New Trajectory Goal
+	// if (new_trajectory_received_ && (ros::Time::now() - trajectory_timer_) >= desired_trajectory_.points[0].time_from_start)
+	if (new_trajectory_received_)
+	{
+
+		double velocity = 0.5;
+		double acceleration = 0.5;
+
+		// Path Creation
+		std::vector<std::vector<double>> path;
+		
+		std::vector<double> first_point = desired_trajectory_.points[0].positions;
+		first_point.push_back(velocity);
+		first_point.push_back(acceleration);
+		first_point.push_back(0.01);
+		
+		std::vector<double> second_point = desired_trajectory_.points[1].positions;
+		second_point.push_back(velocity);
+		second_point.push_back(acceleration);
+		second_point.push_back(0.01);
+		
+		path.push_back(first_point);
+		path.push_back(second_point);
+
+		// Move to the First Trajectory Point
+		// rtde_control_ -> moveJ(desired_trajectory_.points[0].positions, velocity, acceleration, true);
+		// rtde_control_ -> movePath()
+		// rtde_control_ -> moveJ(desired_trajectory_.points[0].positions, velocity, acceleration, true);
+		rtde_control_ -> moveJ(path, true);
+
+		// // Erase Point from Trajectory
+		// desired_trajectory_.points.erase(desired_trajectory_.points.begin());
+
+		// // Check for Trajectory Ending
+		// if (desired_trajectory_.points.size() == 0) 
+		// {
+
+			new_trajectory_received_ = false;
+
+		// 	// Publish Trajectory Executed
+		// 	publishTrajectoryExecuted();
+
+		// 	// Stop Robot
+		// 	rtde_control_ -> stopJ(2.0);
+
+		// }
+
+		// Reset Trajectory Timer
+		// trajectory_timer_ = ros::Time::now();
+
+	}
+
+	// Sleep until ROS Rate
+	ros_rate_.sleep();
+
+}
+ */
+
+void RTDEController::spinner()
+{
+	// Callback Readings
+	ros::spinOnce();
+
+	// Update Actual Joint and TCP Positions
+	actual_joint_position_ = rtde_receive_ -> getActualQ();
+	actual_joint_velocity_ = rtde_receive_ -> getActualQd();
+	actual_cartesian_pose_ = RTDE2Pose(rtde_receive_ -> getActualTCPPose());
 
 	// Sleep until ROS Rate
 	ros_rate_.sleep();
