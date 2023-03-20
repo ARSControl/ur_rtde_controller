@@ -82,7 +82,8 @@ private:
   bool new_trajectory_received_ = false;
   bool new_async_joint_pose_received_ = false;
   bool new_async_cartesian_pose_received_ = false;
-  PolyFit fitting;
+  PolyFit polynomial_fit_;
+  double trajectory_time_;
 
   // ---- UR RTDE LIBRARY ---- //
   ur_rtde::RTDEControlInterface *rtde_control_;

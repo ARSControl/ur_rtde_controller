@@ -70,9 +70,45 @@ RTDEController::~RTDEController()
 
 void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg)
 {
-	// TODO: Spline Interpolation and more...
 	desired_trajectory_ = msg;
-	new_trajectory_received_ = true;
+	// First of all, check if the initial point is equal to the actual joint position
+	double err = 10.0;
+	for (uint i = 0; i < desired_trajectory_.points.begin()->positions.size(); i++)
+		err = std::max(std::fabs(desired_trajectory_.points.begin()->positions[i] - actual_joint_position_[i]), err);
+
+	// TODO: Add the actual configuration as starting point and add time offset for all the other points or move the robot to the starting configuratio
+	// TODO: Ensure initial point and final point with velocity and acceleration equal to 0
+	if (err > 10e-5)
+	{
+		ROS_ERROR("Trajectory not starting from the actual configuration.");
+		return;
+	}
+
+	// TODO: Spline Interpolation and more...
+	PolyFit::trajectory traj;
+	traj.points.resize(desired_trajectory_.points.size());
+	for (uint i = 0; i < desired_trajectory_.points.size(); i++)
+	{
+		traj.points[i].position = desired_trajectory_.points[i].positions;
+		if (desired_trajectory_.points[i].velocities.size())
+			traj.points[i].velocity = desired_trajectory_.points[i].velocities;
+		if (desired_trajectory_.points[i].accelerations.size())
+			traj.points[i].acceleration = desired_trajectory_.points[i].accelerations;
+		traj.points[i].time = desired_trajectory_.points[i].time_from_start.toSec();
+	}
+	if (polynomial_fit_.computePolynomials(traj))
+	{
+		// Check if the resulting trajectoy coplies with the limits. TODO set correct limits
+		if (polynomial_fit_.evaluateMaxPolynomials(0.002) > 2 * M_PI || polynomial_fit_.evaluateMaxPolynomialsDer(0.002) > 2 * M_PI || polynomial_fit_.evaluateMaxPolynomialsDDer(0.002) > 2 * M_PI)
+		{
+			ROS_ERROR("Joint limit not satisfied.");
+			return;
+		}
+		trajectory_time_ = 0.0;
+		new_trajectory_received_ = true;
+	}
+	else
+		ROS_ERROR("Unable to fit the trajectory! Check data points.");
 }
 
 void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg)
@@ -564,7 +600,14 @@ void RTDEController::moveTrajectory()
 	if (!new_trajectory_received_)
 		return;
 
-	// TODO: Implement Trajectory Controller
+	// TODO: Create private_variable traj_time and increase it-> 2ms or real value?
+	Eigen::VectorXd traj_vel = polynomial_fit_.evaluatePolynomialsDer(trajectory_time_);
+	traj_vel += (polynomial_fit_.evaluatePolynomials(trajectory_time_) - Eigen::Map<Eigen::VectorXd>(actual_joint_position_.data(), actual_joint_position_.size()));
+	std::vector<double> desired_velocity(traj_vel.data(), traj_vel.data() + traj_vel.size());
+
+	Eigen::VectorXd acc = polynomial_fit_.evaluatePolynomialsDDer(trajectory_time_);
+	rtde_control_->speedJ(desired_velocity, (acc.cwiseAbs()).maxCoeff());
+	trajectory_time_ += 0.002;
 }
 
 void RTDEController::checkAsyncMovements()
