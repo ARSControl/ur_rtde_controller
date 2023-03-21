@@ -7,17 +7,29 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	if(!nh_.param<bool>("/ur_rtde_controller/enable_gripper", enable_gripper_, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper_);}
 	if(!nh_.param<bool>("/ur_rtde_controller/asynchronous", asynchronous_, "False")) {ROS_ERROR_STREAM("Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
 
+	// Initialize Dashboard
+    rtde_dashboard_ = new ur_rtde::DashboardClient(ROBOT_IP);
+
+	// Check Remote Control Status
+	rtde_dashboard_ -> connect();
+	while (!rtde_dashboard_ -> isInRemoteControl()) {ROS_ERROR_THROTTLE(5, "ERROR: Robot Not in RemoteControl Mode");}
+
 	// RTDE Library
-	rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP);
-	rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ROBOT_IP);
-	rtde_io_  	  = new ur_rtde::RTDEIOInterface(ROBOT_IP);
+	rtde_control_ 	= new ur_rtde::RTDEControlInterface(ROBOT_IP);
+	rtde_receive_ 	= new ur_rtde::RTDEReceiveInterface(ROBOT_IP);
+	rtde_io_  	  	= new ur_rtde::RTDEIOInterface(ROBOT_IP);
+
+	// Reupload RTDE Control Script if Needed
+	if (!rtde_dashboard_ -> running()) rtde_control_ -> reuploadScript();
+	rtde_dashboard_ -> disconnect();
 
 	// RobotiQ Gripper
 	if (enable_gripper_) {
 
 		// Initialize Gripper
-		robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, true);
+		robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, false);
 		robotiq_gripper_ -> connect();
+		robotiq_gripper_ -> activate();
 
 		// Gripper Service Server
 		robotiq_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/command", &RTDEController::RobotiQGripperCallback, this);
@@ -38,13 +50,16 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	cartesian_velocity_command_sub_	= nh_.subscribe("/ur_rtde/controllers/cartesian_velocity_controller/command", 1, &RTDEController::cartesianVelocityCallback, this);
 
 	// ROS - Service Servers
-	stop_robot_server_			= nh_.advertiseService("/ur_rtde/controllers/stop_robot", &RTDEController::stopRobotCallback, this);
-    start_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/start", 	  &RTDEController::startFreedriveModeCallback, this);
-    stop_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/stop",  	  &RTDEController::stopFreedriveModeCallback, this);
-	zeroFT_sensor_server_		= nh_.advertiseService("/ur_rtde/zeroFTSensor", 		  &RTDEController::zeroFTSensorCallback, this);
-    get_FK_server_				= nh_.advertiseService("/ur_rtde/getFK", 				  &RTDEController::getForwardKinematicCallback, this);
-    get_IK_server_				= nh_.advertiseService("/ur_rtde/getIK", 				  &RTDEController::getInverseKinematicCallback, this);
-	get_safety_status_server_	= nh_.advertiseService("/ur_rtde/getSafetyStatus",  	  &RTDEController::getSafetyStatusCallback, this);
+	stop_robot_server_			= nh_.advertiseService("/ur_rtde/controllers/stop_robot",  &RTDEController::stopRobotCallback, this);
+    set_async_parameter_server_ = nh_.advertiseService("/ur_rtde/param/set_asynchronous",  &RTDEController::setAsyncParameterCallback, this);
+    start_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/start", 	   &RTDEController::startFreedriveModeCallback, this);
+    stop_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/stop",  	   &RTDEController::stopFreedriveModeCallback, this);
+	zeroFT_sensor_server_		= nh_.advertiseService("/ur_rtde/zeroFTSensor", 		   &RTDEController::zeroFTSensorCallback, this);
+    get_FK_server_				= nh_.advertiseService("/ur_rtde/getFK", 				   &RTDEController::getForwardKinematicCallback, this);
+    get_IK_server_				= nh_.advertiseService("/ur_rtde/getIK", 				   &RTDEController::getInverseKinematicCallback, this);
+	get_safety_status_server_	= nh_.advertiseService("/ur_rtde/getSafetyStatus",  	   &RTDEController::getSafetyStatusCallback, this);
+	enable_gripper_server_		= nh_.advertiseService("/ur_rtde/robotiq_gripper/enable",  &RTDEController::enableRobotiQGripperCallback, this);
+	disable_gripper_server_		= nh_.advertiseService("/ur_rtde/robotiq_gripper/disable", &RTDEController::disableRobotiQGripperCallback, this);
 
 	ros::Duration(1).sleep();
 	std::cout << std::endl;
@@ -58,6 +73,8 @@ RTDEController::~RTDEController()
 	std::cout << std::endl;
 	ROS_WARN("UR RTDE Controller - Disconnected\n");
 }
+
+// TODO: Reconnect after Emergency Stop Pressed
 
 void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg)
 {
@@ -77,7 +94,8 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoi
 	Eigen::VectorXd actual_pose  = Eigen::VectorXd::Map(actual_joint_position_.data(), actual_joint_position_.size());
 
 	// Check Joint Limits
-	if ((desired_pose.array().abs() > JOINT_LIMITS).any()) {ROS_ERROR("ERROR: Received Joint Position Outside Joint Limits"); return;}
+	if (!rtde_control_ -> isJointsWithinSafetyLimits(msg.positions)) {ROS_ERROR("ERROR: Received Joint Position Outside Safety Limits"); return;}
+	// if ((desired_pose.array().abs() > JOINT_LIMITS).any()) {ROS_ERROR("ERROR: Received Joint Position Outside Joint Limits"); return;}
 
 	// Path Length
 	double LP = (desired_pose - actual_pose).array().abs().maxCoeff();
@@ -110,6 +128,9 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPo
 {
 	// Convert Geometry Pose to RTDE Pose
 	std::vector<double> desired_pose = Pose2RTDE(msg.cartesian_pose);
+
+	// Check Pose Limits
+	if (!rtde_control_ -> isPoseWithinSafetyLimits(desired_pose)) {ROS_ERROR("ERROR: Received Cartesian Position Outside Safety Limits"); return;}
 
 	// Check Tool Velocity Limits
 	if (msg.velocity > TOOL_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity"); return;}
@@ -172,20 +193,29 @@ void RTDEController::cartesianVelocityCallback(const geometry_msgs::Twist msg)
 	rtde_control_ -> speedL(desired_cartesian_velocity, acceleration, 0.002);
 }
 
-// TODO: Service for Setting the asyncronous_ boolean
-
 bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
-	// TODO: Fix Stop Robot when pposition movement -> try stopJ ? | speedStop works while speedJ
-	// rosservice call /ur_rtde/controllers/stop_robot 
-	// ERROR: service [/ur_rtde/controllers/stop_robot] responded with an error: b''
-	
-	// Stop Robot in Velocity
-	res.success = rtde_control_ -> speedStop(2.0);
+	// Stop Robot
+	rtde_control_ -> stopJ(2.0);
+
+	// Clear Dashboard Warning Pop-Up
+	rtde_dashboard_ -> connect();
+	rtde_dashboard_ -> closePopup();
+	rtde_dashboard_ -> disconnect();
 
 	// Reset Booleans Variables
 	resetBooleans();
 
+	res.success = true;
+	return res.success;
+}
+
+bool RTDEController::setAsyncParameterCallback(std_srvs::SetBoolRequest &req, std_srvs::SetBoolResponse &res)
+{
+	// Set Asynchronous Parameter
+	asynchronous_ = req.data;
+
+	res.success = true;
 	return res.success;
 }
 
@@ -333,6 +363,45 @@ bool RTDEController::RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperCo
  	 ***********************************************************************************************/
 
 	res.success = true;
+	return res.success;
+}
+
+bool RTDEController::enableRobotiQGripperCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+	// Enable RobotiQ Gripper
+	enable_gripper_ = true;
+
+	// Create the Gripper Class if Doesn't Exist
+	if (robotiq_gripper_ == nullptr) robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, false);
+
+	// Connect the Gripper if Not Connected
+	if (!robotiq_gripper_ -> isConnected()) robotiq_gripper_ -> connect();
+
+	// Activate the Gripper
+	robotiq_gripper_ -> activate();
+
+	// Create the Gripper Service Server if Doesn't Exist
+	if (robotiq_gripper_server_ == nullptr) robotiq_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/command", &RTDEController::RobotiQGripperCallback, this);
+
+	res.success = true;
+	return res.success;
+}
+
+bool RTDEController::disableRobotiQGripperCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+	// Disable RobotiQ Gripper
+	enable_gripper_ = false;
+	res.success = true;
+
+	// Return if the Gripper Class Doesn't Exist
+	if (robotiq_gripper_ == nullptr) return true;
+
+	// Disconnect if the Gripper is Connected
+	if (robotiq_gripper_ -> isConnected()) robotiq_gripper_ -> disconnect();
+
+	// Shutdown the Gripper Service Server if Exist
+	if (robotiq_gripper_server_ != nullptr) robotiq_gripper_server_.shutdown();
+
 	return res.success;
 }
 
@@ -520,10 +589,49 @@ void RTDEController::checkAsyncMovements()
 	if (rtde_control_ -> getAsyncOperationProgress() < 0) publishTrajectoryExecuted();
 }
 
+void RTDEController::checkRobotStatus()
+{
+	// Init Flags
+	bool eStop = false, protectiveStop = false;
+
+	// Print Robot Emergency and Protective Stop
+	while (rtde_receive_ -> isEmergencyStopped())  {ROS_WARN_THROTTLE(5, "EMERGENCY STOP PRESSED"); eStop = true;}
+	while (rtde_receive_ -> isProtectiveStopped()) {ROS_WARN_THROTTLE(5, "PROTECTIVE STOP"); 		protectiveStop = true;}
+
+	// Check Flags
+	if (eStop)
+	{
+		// Info Prints
+		ROS_WARN("EMERGENCY STOP RELEASED\n");
+
+		// Check if Robot Mode is ROBOT_MODE_RUNNING
+		while (rtde_receive_ -> getRobotMode() != ROBOT_MODE_RUNNING) {ROS_INFO_THROTTLE(5, "Wait for Robot Recovery...");}
+
+		// Re-Upload RTDE Control Script
+		rtde_control_ -> reuploadScript();
+
+		// Print Robot Ready
+		std::cout << std::endl;
+		ROS_WARN("Robot Ready to Receive New Commands\n");
+
+		// Reset Booleans
+		resetBooleans();
+
+	}
+
+	if (protectiveStop) ROS_WARN("PROTECTIVE STOP RECOVERED");
+
+	// Check Robot Connection Status
+	if (!rtde_control_ -> isConnected()) ROS_ERROR("ROBOT DISCONNECTED");
+}
+
 void RTDEController::spinner()
 {
 	// Callback Readings
 	ros::spinOnce();
+
+	// Check UR Status
+	checkRobotStatus();
 
 	// Update Actual Joint and TCP Positions
 	actual_joint_position_ = rtde_receive_ -> getActualQ();
@@ -571,15 +679,16 @@ int main(int argc, char **argv) {
     ros::NodeHandle nh;
     ros::Rate loop_rate = 500;
 
-	// Create a New RTDEController
-    rtde = new RTDEController(nh, loop_rate);
-
 	// Create a SIGINT Handler
 	struct sigaction sa;
     sa.sa_handler = signalHandler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
 	sigaction(SIGINT, &sa, NULL);
+	std::cout << std::endl;
+
+	// Create a New RTDEController
+    rtde = new RTDEController(nh, loop_rate);
 
 	// Publish JointState, TCPPose, FTSensor in separate Threads
 	publishJointState = new std::thread(&RTDEController::publishJointState, rtde);

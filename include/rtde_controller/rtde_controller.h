@@ -7,6 +7,7 @@
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>
 #include <ur_rtde/rtde_io_interface.h>
+#include <ur_rtde/dashboard_client.h>
 #include <ur_rtde/robotiq_gripper.h>
 
 #include <trajectory_msgs/JointTrajectory.h>
@@ -19,6 +20,7 @@
 #include <std_msgs/Bool.h>
 
 #include <std_srvs/Trigger.h>
+#include <std_srvs/SetBool.h>
 
 #include "ur_rtde_controller/RobotiQGripperControl.h"
 #include "ur_rtde_controller/CartesianPoint.h"
@@ -44,6 +46,17 @@
 #define SERVO_GAIN_MIN 100
 #define BLEND_MAX 2.0
 #define BLEND_MIN 0.0
+
+#define ROBOT_MODE_NO_CONTROLLER - 1
+#define ROBOT_MODE_DISCONNECTED 0
+#define ROBOT_MODE_CONFIRM_SAFETY 1
+#define ROBOT_MODE_BOOTING 2
+#define ROBOT_MODE_POWER_OFF 3
+#define ROBOT_MODE_POWER_ON 4
+#define ROBOT_MODE_IDLE 5
+#define ROBOT_MODE_BACKDRIVE 6
+#define ROBOT_MODE_RUNNING 7
+#define ROBOT_MODE_UPDATING_FIRMWARE 8
 
 class RTDEController {
 
@@ -85,6 +98,7 @@ class RTDEController {
     ur_rtde::RTDEControlInterface* rtde_control_;
     ur_rtde::RTDEReceiveInterface* rtde_receive_;
     ur_rtde::RTDEIOInterface*      rtde_io_;
+    ur_rtde::DashboardClient*      rtde_dashboard_;
 
     // ---- ROBOTIQ GRIPPER ---- //
     ur_rtde::RobotiqGripper*       robotiq_gripper_;
@@ -109,6 +123,7 @@ class RTDEController {
 
     // ---- ROS - SERVICE SERVERS & CALLBACKS ---- //
     ros::ServiceServer stop_robot_server_;
+    ros::ServiceServer set_async_parameter_server_;
     ros::ServiceServer start_FreedriveMode_server_;
     ros::ServiceServer stop_FreedriveMode_server_;
     ros::ServiceServer zeroFT_sensor_server_;
@@ -116,7 +131,10 @@ class RTDEController {
     ros::ServiceServer get_IK_server_;
     ros::ServiceServer get_safety_status_server_;
     ros::ServiceServer robotiq_gripper_server_;
+    ros::ServiceServer enable_gripper_server_;
+    ros::ServiceServer disable_gripper_server_;
     bool stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
+    bool setAsyncParameterCallback(std_srvs::SetBoolRequest &req, std_srvs::SetBoolResponse &res);
     bool startFreedriveModeCallback(ur_rtde_controller::StartFreedriveMode::Request  &req, ur_rtde_controller::StartFreedriveMode::Response &res);
     bool stopFreedriveModeCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
     bool zeroFTSensorCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
@@ -124,6 +142,8 @@ class RTDEController {
     bool getInverseKinematicCallback(ur_rtde_controller::GetInverseKinematic::Request  &req, ur_rtde_controller::GetInverseKinematic::Response &res);
     bool getSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res);
     bool RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request  &req, ur_rtde_controller::RobotiQGripperControl::Response &res);
+    bool enableRobotiQGripperCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
+    bool disableRobotiQGripperCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
 
     // ---- MOVEMENT FUNCTIONS ---- //
     void moveTrajectory();
@@ -132,6 +152,7 @@ class RTDEController {
     // ---- UTILITIES FUNCTIONS ---- //
     void resetBooleans();
     void publishTrajectoryExecuted();
+    void checkRobotStatus();
     std::vector<double> Pose2RTDE(geometry_msgs::Pose pose);
     geometry_msgs::Pose RTDE2Pose(std::vector<double> rtde_pose);
 
