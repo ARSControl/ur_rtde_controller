@@ -92,7 +92,6 @@ class RTDEController {
 		std::vector<double> actual_joint_position_;
 		std::vector<double> actual_joint_velocity_;
 		geometry_msgs::Pose actual_cartesian_pose_;
-		trajectory_msgs::JointTrajectory desired_trajectory_;
 		bool new_trajectory_received_ = false;
 		bool new_async_joint_pose_received_ = false;
 		bool new_async_cartesian_pose_received_ = false;

@@ -76,34 +76,30 @@ RTDEController::~RTDEController()
 
 void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg)
 {
-	desired_trajectory_ = msg;
-
 	// Check if the Initial Point == Actual Joint Position
 	double err = 10.0;
-	for (uint i = 0; i < desired_trajectory_.points.begin()->positions.size(); i++)
-		err = std::max(std::fabs(desired_trajectory_.points.begin()->positions[i] - actual_joint_position_[i]), err);
+	for (uint i = 0; i < msg.points.begin()->positions.size(); i++)
+		err = std::max(std::fabs(msg.points.begin()->positions[i] - actual_joint_position_[i]), err);
 
 	// TODO: Add the actual configuration as starting point and add time offset for all the other points or move the robot to the starting configuration
 	// TODO: Ensure initial point and final point with velocity and acceleration equal to 0
-	if (err > 10e-5)
-	{
-		ROS_ERROR("Trajectory not starting from the actual configuration.");
-		return;
-	}
+	if (err > 10e-5) {ROS_ERROR("Trajectory not starting from the actual configuration."); return;}
 
 	// TODO: Spline Interpolation and more...
-	PolyFit::trajectory traj;
-	traj.points.resize(desired_trajectory_.points.size());
-	for (uint i = 0; i < desired_trajectory_.points.size(); i++)
+	PolyFit::trajectory trajectory;
+	trajectory.points.resize(msg.points.size());
+
+	// Compose Trajectory Message
+	for (uint i = 0; i < msg.points.size(); i++)
 	{
-		traj.points[i].position = desired_trajectory_.points[i].positions;
-		if (desired_trajectory_.points[i].velocities.size())
-			traj.points[i].velocity = desired_trajectory_.points[i].velocities;
-		if (desired_trajectory_.points[i].accelerations.size())
-			traj.points[i].acceleration = desired_trajectory_.points[i].accelerations;
-		traj.points[i].time = desired_trajectory_.points[i].time_from_start.toSec();
+		trajectory.points[i].position = msg.points[i].positions;
+		if (msg.points[i].velocities.size())	trajectory.points[i].velocity = msg.points[i].velocities;
+		if (msg.points[i].accelerations.size()) trajectory.points[i].acceleration = msg.points[i].accelerations;
+		trajectory.points[i].time = msg.points[i].time_from_start.toSec();
 	}
-	if (polynomial_fit_.computePolynomials(traj))
+
+	// Compute Polynomial Fitting
+	if (polynomial_fit_.computePolynomials(trajectory))
 	{
 		// TODO: set correct limits
 		// Check if the Resulting Trajectory Collides with the Limits. 
@@ -112,11 +108,11 @@ void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTraject
 			ROS_ERROR("ERROR: Joint Limit Not Satisfied.");
 			return;
 		}
+
 		trajectory_time_ = 0.0;
 		new_trajectory_received_ = true;
-	}
-	else
-		ROS_ERROR("ERROR: Unable to Fit the Trajectory! | Check Data Points.");
+
+	} else {ROS_ERROR("ERROR: Unable to Fit the Trajectory! | Check Data Points.");}
 }
 
 void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg)
@@ -612,13 +608,18 @@ void RTDEController::moveTrajectory()
 	// Return if No Trajectory Received
 	if (!new_trajectory_received_) return;
 
-	// TODO: Create private_variable traj_time and increase it-> 2ms or real value?
-	Eigen::VectorXd traj_vel = polynomial_fit_.evaluatePolynomialsDer(trajectory_time_);
-	traj_vel += (polynomial_fit_.evaluatePolynomials(trajectory_time_) - Eigen::Map<Eigen::VectorXd>(actual_joint_position_.data(), actual_joint_position_.size()));
-	std::vector<double> desired_velocity(traj_vel.data(), traj_vel.data() + traj_vel.size());
+	// Create the Desired Velocity Vector
+	Eigen::VectorXd trajectory_vel = polynomial_fit_.evaluatePolynomialsDer(trajectory_time_);
+	trajectory_vel += (polynomial_fit_.evaluatePolynomials(trajectory_time_) - Eigen::Map<Eigen::VectorXd>(actual_joint_position_.data(), actual_joint_position_.size()));
+	std::vector<double> desired_velocity(trajectory_vel.data(), trajectory_vel.data() + trajectory_vel.size());
 
+	// Create the Desired Acceleration Vector
 	Eigen::VectorXd acc = polynomial_fit_.evaluatePolynomialsDDer(trajectory_time_);
+
+	// Move Robot with Velocity Commands
 	rtde_control_->speedJ(desired_velocity, (acc.cwiseAbs()).maxCoeff());
+
+	// TODO: Increase trajectory_time_ -> 2ms or real value?
 	trajectory_time_ += 0.002;
 }
 
