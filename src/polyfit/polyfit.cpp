@@ -10,7 +10,7 @@ PolyFit::~PolyFit()
 
 bool PolyFit::computePolynomials(const trajectory &traj)
 {
-	std::vector<polynomial> polynomials_(traj.points[0].position.size());
+	polynomials_.resize(traj.points[0].position.size());
 	for (uint k = 0; k < traj.points[0].position.size(); k++)
 	{
 		double toll = 1e-6;
@@ -30,17 +30,17 @@ bool PolyFit::computePolynomials(const trajectory &traj)
 				Eigen::MatrixXd subB;
 				if (traj.points[i].acceleration.size())
 				{
-					subA.resize(3, n);
+					subA.resize(3, n+1);
 					subB.resize(1, 3);
 				}
 				else if (traj.points[i].velocity.size())
 				{
-					subA.resize(2, n);
+					subA.resize(2, n+1);
 					subB.resize(1, 2);
 				}
 				else
 				{
-					subA.resize(1, n);
+					subA.resize(1, n+1);
 					subB.resize(1, 1);
 				}
 				subA.setZero();
@@ -49,23 +49,25 @@ bool PolyFit::computePolynomials(const trajectory &traj)
 				double t = traj.points[i].time;
 				for (uint j = 0; j < n + 1; j++)
 				{
-					subA(1, j) = pow(t, n - j);
+					subA(0, j) = pow(t, n - j);
+
 					if (traj.points[i].velocity.size() && n - j - 1 > 0)
-						subA(2, j) = (n - j) * std::pow(t, n - j - 1);
+						subA(1, j) = (n - j) * std::pow(t, n - j - 1);
 					if (traj.points[i].acceleration.size() && n - j - 1 > 0)
-						subA(3, j) = (n - j) * (n - j - 1) * std::pow(t, n - j - 2);
+						subA(2, j) = (n - j) * (n - j - 1) * std::pow(t, n - j - 2);
 				}
-				subB(1, 1) = traj.points[i].position[k];
+				subB(0, 0) = traj.points[i].position[k];
 				if (traj.points[i].velocity.size())
-					subB(1, 2) = traj.points[i].velocity[k];
+					subB(1, 0) = traj.points[i].velocity[k];
 				if (traj.points[i].acceleration.size())
-					subB(1, 3) = traj.points[i].acceleration[k];
-				A.conservativeResize(A.rows() + subA.rows(), n);
+					subB(2, 0) = traj.points[i].acceleration[k];
+				A.conservativeResize(A.rows() + subA.rows(), n+1);
 				B.conservativeResize(B.rows() + subB.rows(), 1);
-				A.block(A.rows() - subA.rows(), 0, subA.rows(), n) = subA;
+				A.block(A.rows() - subA.rows(), 0, subA.rows(), n+1) = subA;
 				B.block(B.rows() - subB.rows(), 0, subB.rows(), 1) = subB;
 			}
-			auto x = A.bdcSvd().solve(B);
+			Eigen::MatrixXd x = A.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(B);
+
 			error = (A * x - B).norm();
 			if (error < toll)
 			{
@@ -74,12 +76,13 @@ bool PolyFit::computePolynomials(const trajectory &traj)
 				for (uint i = 0; i < n + 1; i++)
 					polynomials_[k].coefficients[i] = x(i, 0);
 				polynomials_[k].final_time = traj.points.end()->time;
+				std::cout << traj.points.back().time << std::endl;
 			}
-			if (std::fabs(error - error_old) < toll)
+			if (std::fabs(error - error_old) < 1000.0*toll)
 				counter++;
 			else
 				counter = 0;
-			if (counter > 100)
+			if (counter > 10)
 			{
 				polynomials_.resize(0);
 				return false;
@@ -101,28 +104,29 @@ Eigen::VectorXd PolyFit::evaluatePolynomials(const double &t)
 double PolyFit::evaluatePolynomial(const polynomial &p, const double &t)
 {
 	double eval_time = std::min(p.final_time, t);
-	double eval_pol = *p.coefficients.end();
+	double eval_pol = p.coefficients.back();
 	for (uint i = 0; i < p.n; i++)
 		eval_pol += p.coefficients[i] * std::pow(eval_time, p.n - i);
-
 	return eval_pol;
 }
 
 Eigen::VectorXd PolyFit::evaluatePolynomialsDer(const double &t)
 {
-	Eigen::VectorXd pol_eval(polynomials_.size());
+	Eigen::VectorXd dpol_eval(polynomials_.size());
 	for (uint i = 0; i < polynomials_.size(); i++)
-		pol_eval(i) = evaluatePolynomialDer(polynomials_[i], t);
-	return pol_eval;
+		dpol_eval(i) = evaluatePolynomialDer(polynomials_[i], t);
+	return dpol_eval;
 }
 
 double PolyFit::evaluatePolynomialDer(const polynomial &p, const double &t)
 {
 	double eval_time = std::min(p.final_time, t);
+	std::cout << eval_time << std::endl;
 	double deval_pol = *p.coefficients.end() - 1;
-	for (uint i = 0; i < p.n - 1; i++)
+	for (uint i = 0; i < p.n; i++)
 		deval_pol += (p.n - i) * p.coefficients[i] * std::pow(eval_time, p.n - i - 1);
-
+	std::cout << deval_pol << std::endl;
+	
 	return deval_pol;
 }
 
@@ -140,7 +144,6 @@ double PolyFit::evaluatePolynomialDDer(const polynomial &p, const double &t)
 	double ddeval_pol = *p.coefficients.end() - 2;
 	for (uint i = 0; i < p.n - 2; i++)
 		ddeval_pol += (p.n - i - 1) * (p.n - i) * p.coefficients[i] * std::pow(eval_time, p.n - i - 2);
-
 	return ddeval_pol;
 }
 

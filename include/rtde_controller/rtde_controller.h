@@ -61,6 +61,8 @@
 #define ROBOT_MODE_RUNNING 7
 #define ROBOT_MODE_UPDATING_FIRMWARE 8
 
+#define JOINT_ERROR 10e-5
+
 class RTDEController {
 
 	public:

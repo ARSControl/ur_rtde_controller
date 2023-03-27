@@ -1,6 +1,10 @@
 #ifndef POLYFIT_H
 #define POLYFIT_H
 
+#include <stdlib.h>
+#include <iostream>
+#include <vector>
+
 #include <Eigen/Dense>
 
 class PolyFit
