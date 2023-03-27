@@ -8,16 +8,16 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	if(!nh_.param<bool>("/ur_rtde_controller/asynchronous", asynchronous_, "False")) {ROS_ERROR_STREAM("Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
 
 	// Initialize Dashboard
-    rtde_dashboard_ = new ur_rtde::DashboardClient(ROBOT_IP);
+	rtde_dashboard_ = new ur_rtde::DashboardClient(ROBOT_IP);
 
 	// Check Remote Control Status
 	rtde_dashboard_ -> connect();
 	while (!rtde_dashboard_ -> isInRemoteControl()) {ROS_ERROR_THROTTLE(5, "ERROR: Robot Not in RemoteControl Mode");}
 
 	// RTDE Library
-	rtde_control_ 	= new ur_rtde::RTDEControlInterface(ROBOT_IP);
-	rtde_receive_ 	= new ur_rtde::RTDEReceiveInterface(ROBOT_IP);
-	rtde_io_  	  	= new ur_rtde::RTDEIOInterface(ROBOT_IP);
+	rtde_control_	= new ur_rtde::RTDEControlInterface(ROBOT_IP);
+	rtde_receive_	= new ur_rtde::RTDEReceiveInterface(ROBOT_IP);
+	rtde_io_		= new ur_rtde::RTDEIOInterface(ROBOT_IP);
 
 	// Reupload RTDE Control Script if Needed
 	if (!rtde_dashboard_ -> running()) rtde_control_ -> reuploadScript();
@@ -36,30 +36,30 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 
 	}
 
-    // ROS - Publishers
+	// ROS - Publishers
 	joint_state_pub_		 = nh_.advertise<sensor_msgs::JointState> ("/joint_states", 1);
 	tcp_pose_pub_			 = nh_.advertise<geometry_msgs::Pose>	  ("/ur_rtde/cartesian_pose", 1);
 	ft_sensor_pub_			 = nh_.advertise<geometry_msgs::Wrench>   ("/ur_rtde/ft_sensor", 1);
 	trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>		  ("/ur_rtde/trajectory_executed", 1);
 
-    // ROS - Subscribers
+	// ROS - Subscribers
 	// TODO: trajectory_command_sub_			= nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 		  1, &RTDEController::jointTrajectoryCallback, this);
-	joint_goal_command_sub_			= nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command",        1, &RTDEController::jointGoalCallback, this);
-	cartesian_goal_command_sub_		= nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command",    1, &RTDEController::cartesianGoalCallback, this);
-	joint_velocity_command_sub_		= nh_.subscribe("/ur_rtde/controllers/joint_velocity_controller/command",     1, &RTDEController::jointVelocityCallback, this);
+	joint_goal_command_sub_			= nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command",		  1, &RTDEController::jointGoalCallback, this);
+	cartesian_goal_command_sub_		= nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command",	  1, &RTDEController::cartesianGoalCallback, this);
+	joint_velocity_command_sub_		= nh_.subscribe("/ur_rtde/controllers/joint_velocity_controller/command",	  1, &RTDEController::jointVelocityCallback, this);
 	cartesian_velocity_command_sub_	= nh_.subscribe("/ur_rtde/controllers/cartesian_velocity_controller/command", 1, &RTDEController::cartesianVelocityCallback, this);
 
 	// ROS - Service Servers
-	stop_robot_server_			= nh_.advertiseService("/ur_rtde/controllers/stop_robot",  &RTDEController::stopRobotCallback, this);
-    set_async_parameter_server_ = nh_.advertiseService("/ur_rtde/param/set_asynchronous",  &RTDEController::setAsyncParameterCallback, this);
-    start_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/start", 	   &RTDEController::startFreedriveModeCallback, this);
-    stop_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/stop",  	   &RTDEController::stopFreedriveModeCallback, this);
-	zeroFT_sensor_server_		= nh_.advertiseService("/ur_rtde/zeroFTSensor", 		   &RTDEController::zeroFTSensorCallback, this);
-    get_FK_server_				= nh_.advertiseService("/ur_rtde/getFK", 				   &RTDEController::getForwardKinematicCallback, this);
-    get_IK_server_				= nh_.advertiseService("/ur_rtde/getIK", 				   &RTDEController::getInverseKinematicCallback, this);
-	get_safety_status_server_	= nh_.advertiseService("/ur_rtde/getSafetyStatus",  	   &RTDEController::getSafetyStatusCallback, this);
-	enable_gripper_server_		= nh_.advertiseService("/ur_rtde/robotiq_gripper/enable",  &RTDEController::enableRobotiQGripperCallback, this);
-	disable_gripper_server_		= nh_.advertiseService("/ur_rtde/robotiq_gripper/disable", &RTDEController::disableRobotiQGripperCallback, this);
+	stop_robot_server_			= nh_.advertiseService("/ur_rtde/controllers/stop_robot",	&RTDEController::stopRobotCallback, this);
+	set_async_parameter_server_ = nh_.advertiseService("/ur_rtde/param/set_asynchronous",	&RTDEController::setAsyncParameterCallback, this);
+	start_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/start",		&RTDEController::startFreedriveModeCallback, this);
+	stop_FreedriveMode_server_	= nh_.advertiseService("/ur_rtde/FreedriveMode/stop",		&RTDEController::stopFreedriveModeCallback, this);
+	zeroFT_sensor_server_		= nh_.advertiseService("/ur_rtde/zeroFTSensor",				&RTDEController::zeroFTSensorCallback, this);
+	get_FK_server_				= nh_.advertiseService("/ur_rtde/getFK",					&RTDEController::getForwardKinematicCallback, this);
+	get_IK_server_				= nh_.advertiseService("/ur_rtde/getIK",					&RTDEController::getInverseKinematicCallback, this);
+	get_safety_status_server_	= nh_.advertiseService("/ur_rtde/getSafetyStatus",			&RTDEController::getSafetyStatusCallback, this);
+	enable_gripper_server_		= nh_.advertiseService("/ur_rtde/robotiq_gripper/enable",	&RTDEController::enableRobotiQGripperCallback, this);
+	disable_gripper_server_		= nh_.advertiseService("/ur_rtde/robotiq_gripper/disable",	&RTDEController::disableRobotiQGripperCallback, this);
 
 	ros::Duration(1).sleep();
 	std::cout << std::endl;
@@ -73,8 +73,6 @@ RTDEController::~RTDEController()
 	std::cout << std::endl;
 	ROS_WARN("UR RTDE Controller - Disconnected\n");
 }
-
-// TODO: Reconnect after Emergency Stop Pressed
 
 void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg)
 {
@@ -140,7 +138,7 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPo
 
 	// Publish Trajectory Executed
 	if (!asynchronous_) publishTrajectoryExecuted();
-    else new_async_cartesian_pose_received_ = true;
+	else new_async_cartesian_pose_received_ = true;
 }
 
 void RTDEController::jointVelocityCallback(const std_msgs::Float64MultiArray msg)
@@ -270,54 +268,54 @@ bool RTDEController::getInverseKinematicCallback(ur_rtde_controller::GetInverseK
 bool RTDEController::getSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res)
 {
 	/************************************************
-	 * 												*
+	 *												*
 	 *  Safety Status Bits 0-10:					*
-	 * 												*
-	 * 		0 = Is normal mode						*
-	 * 		1 = Is reduced mode						*
-	 * 		2 = Is protective stopped				*
-	 * 		3 = Is recovery mode					*
-	 * 		4 = Is safeguard stopped				*
-	 * 		5 = Is system emergency stopped			*
-	 * 		6 = Is robot emergency stopped			*
-	 * 		7 = Is emergency stopped				*
-	 * 		8 = Is violation						*
-	 * 		9 = Is fault							*
-	 * 	   10 = Is stopped due to safety 			*
-	 * 												*
+	 *												*
+	 *		0 = Is normal mode						*
+	 *		1 = Is reduced mode						*
+	 *		2 = Is protective stopped				*
+	 *		3 = Is recovery mode					*
+	 *		4 = Is safeguard stopped				*
+	 *		5 = Is system emergency stopped			*
+	 *		6 = Is robot emergency stopped			*
+	 *		7 = Is emergency stopped				*
+	 *		8 = Is violation						*
+	 *		9 = Is fault							*
+	 *		10 = Is stopped due to safety 			*
+	 *												*
 	 ***********************************************/
 
 	/************************************************
-	 * 												*
+	 *												*
 	 *  Safety Mode									*
-	 * 												*
+	 *												*
 	 *		0 = NORMAL					 			*
 	 *		1 = REDUCED					 			*
 	 *		2 = PROTECTIVE_STOP						*
 	 *		3 = RECOVERY							*
 	 *		4 = SAFEGUARD_STOP						*
-	 * 		5 = SYSTEM_EMERGENCY_STOP				*
-	 * 		6 = ROBOT_EMERGENCY_STOP				*
+	 *		5 = SYSTEM_EMERGENCY_STOP				*
+	 *		6 = ROBOT_EMERGENCY_STOP				*
 	 *		7 = VIOLATION							*
 	 *		8 = FAULT								*
-	 * 												*
+	 *												*
 	 ***********************************************/
 
 	/************************************************
-	 * 												*
+	 *												*
 	 *  Robot Mode									*
-	 * 												*
-	 *	   -1 = ROBOT_MODE_NO_CONTROLLER			*
+	 *												*
+	 *		-1 = ROBOT_MODE_NO_CONTROLLER			*
 	 *		0 = ROBOT_MODE_DISCONNECTED 			*
 	 *		1 = ROBOT_MODE_CONFIRM_SAFETY 			*
 	 *		2 = ROBOT_MODE_BOOTING					*
 	 *		3 = ROBOT_MODE_POWER_OFF				*
 	 *		4 = ROBOT_MODE_POWER_ON					*
-	 * 		5 = ROBOT_MODE_IDLE						*
-	 * 		6 = ROBOT_MODE_BACKDRIVE				*
+	 *		5 = ROBOT_MODE_IDLE						*
+	 *		6 = ROBOT_MODE_BACKDRIVE				*
 	 *		7 = ROBOT_MODE_RUNNING					*
 	 *		8 = ROBOT_MODE_UPDATING_FIRMWARE		*
-	 * 												*
+	 *												*
 	 ***********************************************/
 
 	std::vector<std::string> robot_mode_msg = {"ROBOT_MODE_NO_CONTROLLER", "ROBOT_MODE_DISCONNECTED", "ROBOT_MODE_CONFIRM_SAFETY", "ROBOT_MODE_BOOTING", "ROBOT_MODE_POWER_OFF", "ROBOT_MODE_POWER_ON", "ROBOT_MODE_IDLE", "ROBOT_MODE_BACKDRIVE", "ROBOT_MODE_RUNNING", "ROBOT_MODE_UPDATING_FIRMWARE"};
@@ -343,7 +341,7 @@ bool RTDEController::getSafetyStatusCallback(ur_rtde_controller::GetRobotStatus:
 bool RTDEController::RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request  &req, ur_rtde_controller::RobotiQGripperControl::Response &res)
 {
 	// Normalize Received Values
-	float position 	= req.position / 100;
+	float position	= req.position / 100;
 	float speed		= req.speed / 100;
 	float force		= req.force / 100;
 
@@ -354,12 +352,12 @@ bool RTDEController::RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperCo
 	/************************************************************************************************
 	 *																								*
 	 * Object Detection Status																		*
-	 * 																								*
-	 * 	MOVING = 0                | Gripper is Opening or Closing									*
-	 * 	STOPPED_OUTER_OBJECT = 1  | Outer Object Detected while Opening the Gripper					*
-	 * 	STOPPED_INNER_OBJECT = 2  | Inner Object Detected while Closing the Gripper					*
-	 * 	AT_DEST = 3               | Requested Target Position Reached - No Object Detected			*
-	 * 																								*
+	 *																								*
+	 *	MOVING = 0					|	Gripper is Opening or Closing								*
+	 *	STOPPED_OUTER_OBJECT = 1	|	Outer Object Detected while Opening the Gripper				*
+	 *	STOPPED_INNER_OBJECT = 2	|	Inner Object Detected while Closing the Gripper				*
+	 *	AT_DEST = 3					|	Requested Target Position Reached - No Object Detected		*
+	 *																								*
  	 ***********************************************************************************************/
 
 	res.success = true;
@@ -470,8 +468,8 @@ void RTDEController::resetBooleans()
 {
 	// Reset Booleans Variables
 	new_trajectory_received_ = false;
-    new_async_joint_pose_received_ = false;
-    new_async_cartesian_pose_received_ = false;
+	new_async_joint_pose_received_ = false;
+	new_async_cartesian_pose_received_ = false;
 }
 
 void RTDEController::publishTrajectoryExecuted()
@@ -490,9 +488,9 @@ std::vector<double> RTDEController::Pose2RTDE(geometry_msgs::Pose pose)
 	// Create a Quaternion from Pose Orientation
 	Eigen::Quaterniond quaternion(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
 
-    // Convert from Quaternion to Euler Angles
-    Eigen::Vector3d axis = Eigen::AngleAxisd(quaternion).axis();
-    double angle = Eigen::AngleAxisd(quaternion).angle();
+	// Convert from Quaternion to Euler Angles
+	Eigen::Vector3d axis = Eigen::AngleAxisd(quaternion).axis();
+	double angle = Eigen::AngleAxisd(quaternion).angle();
 	Eigen::Vector3d euler_orientation = axis * angle;
 
 	// Create TCP Pose Message
@@ -510,7 +508,7 @@ std::vector<double> RTDEController::Pose2RTDE(geometry_msgs::Pose pose)
 geometry_msgs::Pose RTDEController::RTDE2Pose(std::vector<double> rtde_pose)
 {
 	// Compute AngleAxis from rx,ry,rz
-    double angle = sqrt(pow(rtde_pose[3],2) + pow(rtde_pose[4],2) + pow(rtde_pose[5],2));
+	double angle = sqrt(pow(rtde_pose[3],2) + pow(rtde_pose[4],2) + pow(rtde_pose[5],2));
 	Eigen::Vector3d axis(rtde_pose[3], rtde_pose[4], rtde_pose[5]);
 	axis = axis.normalized();
 
@@ -539,7 +537,7 @@ Eigen::Matrix<double, 4, 4> RTDEController::pose2eigen(geometry_msgs::Pose pose)
 	T(2, 3) = pose.position.z;
 
 	Eigen::Quaterniond q(pose.orientation.w, pose.orientation.x,
-    	                 pose.orientation.y, pose.orientation.z);
+						 pose.orientation.y, pose.orientation.z);
 
 	T.block<3, 3>(0, 0) = q.normalized().toRotationMatrix();
 
@@ -607,8 +605,9 @@ void RTDEController::checkRobotStatus()
 		// Check if Robot Mode is ROBOT_MODE_RUNNING
 		while (rtde_receive_ -> getRobotMode() != ROBOT_MODE_RUNNING) {ROS_INFO_THROTTLE(5, "Wait for Robot Recovery...");}
 
-		// Re-Upload RTDE Control Script
-		rtde_control_ -> reuploadScript();
+		ros::Duration(3).sleep();
+
+		// TODO: Re-Upload RTDE Control Script
 
 		// Print Robot Ready
 		std::cout << std::endl;
@@ -650,9 +649,9 @@ void RTDEController::spinner()
 
 // Create Null-Pointers to the RTDE Class and the Threads
 RTDEController *rtde = nullptr;
-std::thread *publishJointState = nullptr;
-std::thread *publishTCPPose    = nullptr;
-std::thread *publishFTSensor   = nullptr;
+std::thread *publishJointState	= nullptr;
+std::thread *publishTCPPose		= nullptr;
+std::thread *publishFTSensor	= nullptr;
 
 void signalHandler(int signal)
 {
@@ -663,8 +662,8 @@ void signalHandler(int signal)
 
 	// Join Threads on Main
 	publishJointState -> join();
-	publishTCPPose    -> join();
-	publishFTSensor   -> join();
+	publishTCPPose	  -> join();
+	publishFTSensor	  -> join();
 
 	// Call Destructor
 	delete rtde;
@@ -673,42 +672,42 @@ void signalHandler(int signal)
 
 int main(int argc, char **argv) {
 
-    // ros::init(argc, argv, "ur_rtde_controller", ros::init_options::NoSigintHandler);
-    ros::init(argc, argv, "ur_rtde_controller");
+	// ros::init(argc, argv, "ur_rtde_controller", ros::init_options::NoSigintHandler);
+	ros::init(argc, argv, "ur_rtde_controller");
 
-    ros::NodeHandle nh;
-    ros::Rate loop_rate = 500;
+	ros::NodeHandle nh;
+	ros::Rate loop_rate = 500;
 
 	// Create a SIGINT Handler
 	struct sigaction sa;
-    sa.sa_handler = signalHandler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
+	sa.sa_handler = signalHandler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
 	sigaction(SIGINT, &sa, NULL);
 	std::cout << std::endl;
 
 	// Create a New RTDEController
-    rtde = new RTDEController(nh, loop_rate);
+	rtde = new RTDEController(nh, loop_rate);
 
 	// Publish JointState, TCPPose, FTSensor in separate Threads
-	publishJointState = new std::thread(&RTDEController::publishJointState, rtde);
-	publishTCPPose    = new std::thread(&RTDEController::publishTCPPose,    rtde);
-	publishFTSensor   = new std::thread(&RTDEController::publishFTSensor,   rtde);
+	publishJointState = new std::thread(&RTDEController::publishJointState,	rtde);
+	publishTCPPose	  = new std::thread(&RTDEController::publishTCPPose,	rtde);
+	publishFTSensor	  = new std::thread(&RTDEController::publishFTSensor,	rtde);
 	ros::Duration(1).sleep();
 
 	// Main Spinner
-    while (ros::ok()) {rtde -> spinner();}
+	while (ros::ok()) {rtde -> spinner();}
 
 	// Set Shutdown Trigger
 	rtde -> shutdown_ = true;
 
 	// Join Threads on Main
 	publishJointState -> join();
-	publishTCPPose    -> join();
-	publishFTSensor   -> join();
+	publishTCPPose	  -> join();
+	publishFTSensor	  -> join();
 
 	// Call Destructor
-    delete rtde;
+	delete rtde;
 
 return 0;
 

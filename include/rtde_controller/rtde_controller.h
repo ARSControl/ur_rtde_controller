@@ -96,10 +96,10 @@ class RTDEController {
 		bool new_async_cartesian_pose_received_ = false;
 
 		// ---- UR RTDE LIBRARY ---- //
-		ur_rtde::RTDEControlInterface *rtde_control_;
-		ur_rtde::RTDEReceiveInterface *rtde_receive_;
-		ur_rtde::RTDEIOInterface	  	*rtde_io_;
-		ur_rtde::DashboardClient	  	*rtde_dashboard_;
+		ur_rtde::RTDEControlInterface	*rtde_control_;
+		ur_rtde::RTDEReceiveInterface	*rtde_receive_;
+		ur_rtde::RTDEIOInterface		*rtde_io_;
+		ur_rtde::DashboardClient		*rtde_dashboard_;
 
 		// ---- ROBOTIQ GRIPPER ---- //
 		ur_rtde::RobotiqGripper	   		*robotiq_gripper_;
