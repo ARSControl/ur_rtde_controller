@@ -52,7 +52,9 @@ include_directories(
   ${EIGEN3_INCLUDE_DIR}
 )
 
+add_library(polyfit_lib src/polyfit/polyfit.cpp)
+
 # RTDE Controller
 add_executable(rtde_controller src/rtde_controller/rtde_controller.cpp)
 add_dependencies(rtde_controller ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-target_link_libraries(rtde_controller ${catkin_LIBRARIES} ur_rtde::rtde)
+target_link_libraries(rtde_controller ${catkin_LIBRARIES} ur_rtde::rtde polyfit_lib)

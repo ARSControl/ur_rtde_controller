@@ -32,6 +32,8 @@
 
 #include <Eigen/Dense>
 
+#include "polyfit/polyfit.h"
+
 #define JOINT_LIMITS 6.28
 #define JOINT_VELOCITY_MAX 3.14
 #define JOINT_VELOCITY_MIN 0.0
@@ -94,6 +96,11 @@ class RTDEController {
 		bool new_trajectory_received_ = false;
 		bool new_async_joint_pose_received_ = false;
 		bool new_async_cartesian_pose_received_ = false;
+
+		// ---- TRAJECTORY VARIABLES ---- //
+		PolyFit fitting;
+		PolyFit polynomial_fit_;
+		double trajectory_time_;
 
 		// ---- UR RTDE LIBRARY ---- //
 		ur_rtde::RTDEControlInterface	*rtde_control_;
