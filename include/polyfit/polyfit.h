@@ -41,6 +41,8 @@ public:
   double evaluateMaxPolynomials(const double &ts);
   double evaluateMaxPolynomialsDer(const double &ts);
   double evaluateMaxPolynomialsDDer(const double &ts);
+  Eigen::VectorXd getLastPoint();
+  double getFinalTime();
 
 private:
   std::vector<polynomial> polynomials_;

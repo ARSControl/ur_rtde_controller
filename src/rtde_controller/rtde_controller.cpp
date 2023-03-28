@@ -12,7 +12,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 
 	// Check Remote Control Status
 	rtde_dashboard_ -> connect();
-	while (!rtde_dashboard_ -> isInRemoteControl()) {ROS_ERROR_THROTTLE(5, "ERROR: Robot Not in RemoteControl Mode");}
+	while (!rtde_dashboard_ -> isInRemoteControl()) {ROS_ERROR_THROTTLE(5, "ERROR: Robot Not in RemoteControl Mode\n");}
 
 	// RTDE Library
 	rtde_control_	= new ur_rtde::RTDEControlInterface(ROBOT_IP);
@@ -68,7 +68,10 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 
 RTDEController::~RTDEController()
 {
-	rtde_control_ -> stopJ(2.0);
+	// Stop Robot
+	stopRobot();
+
+	// Disconnect RTDE Control Interface
 	rtde_control_ -> disconnect();
 	std::cout << std::endl;
 	ROS_WARN("UR RTDE Controller - Disconnected\n");
@@ -83,8 +86,7 @@ void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTraject
 
 	// TODO: Add the actual configuration as starting point and add time offset for all the other points or move the robot to the starting configuration
 	// TODO: Ensure initial point and final point with velocity and acceleration equal to 0
-	if (err > JOINT_ERROR) {ROS_ERROR("Trajectory not starting from the actual configuration."); return;}
-	ROS_INFO("New Trajectory Received");
+	if (err > JOINT_ERROR) {ROS_ERROR("Trajectory not starting from the actual configuration.\n"); return;}
 
 	// TODO: Spline Interpolation and more...
 	PolyFit::trajectory trajectory;
@@ -97,7 +99,6 @@ void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTraject
 		if (msg.points[i].velocities.size())	trajectory.points[i].velocity = msg.points[i].velocities;
 		if (msg.points[i].accelerations.size()) trajectory.points[i].acceleration = msg.points[i].accelerations;
 		trajectory.points[i].time = msg.points[i].time_from_start.toSec();
-		std::cout << trajectory.points[i].time  << std::endl;
 	}
 
 	// Compute Polynomial Fitting
@@ -107,49 +108,57 @@ void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTraject
 		// Check if the Resulting Trajectory Comply with the Limits. 
 		if (polynomial_fit_.evaluateMaxPolynomials(0.002) > JOINT_LIMITS || polynomial_fit_.evaluateMaxPolynomialsDer(0.002) > JOINT_VELOCITY_MAX || polynomial_fit_.evaluateMaxPolynomialsDDer(0.002) > JOINT_ACCELERATION_MAX)
 		{
-			ROS_ERROR("ERROR: Joint Limit Not Satisfied.");
+			ROS_ERROR("ERROR: Joint Limit Not Satisfied.\n");
 			return;
 		}
 
 		trajectory_time_ = 0.0;
 		new_trajectory_received_ = true;
-		ROS_INFO("Fitted");
+		ROS_INFO("New Trajectory Received\n");
 
-	} else {ROS_ERROR("ERROR: Unable to Fit the Trajectory! | Check Data Points.");}
+	} else {ROS_ERROR("ERROR: Unable to Fit the Trajectory! | Check Data Points.\n");}
 }
 
 void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg)
 {
 	// Check Input Data Size
-	if (msg.positions.size() != 6) {ROS_ERROR("ERROR: Received Joint Position Goal Size != 6"); return;}
-	if (msg.time_from_start.toSec() == 0) {ROS_ERROR("ERROR: Desired Time = 0"); return;}
+	if (msg.positions.size() != 6) {ROS_ERROR("ERROR: Received Joint Position Goal Size != 6\n"); return;}
+	if (msg.time_from_start.toSec() == 0 && msg.velocities.size() == 0) {ROS_ERROR("ERROR: Desired Time = 0\n"); return;}
+	else if (msg.time_from_start.toSec() == 0 && msg.velocities[0] <= 0.0) {ROS_ERROR("ERROR: Desired Time = 0 | Desired Velocity <= 0\n"); return;}
 
 	// Get Desired and Actual Joint Pose
 	Eigen::VectorXd desired_pose = Eigen::VectorXd::Map(msg.positions.data(), msg.positions.size());
 	Eigen::VectorXd actual_pose  = Eigen::VectorXd::Map(actual_joint_position_.data(), actual_joint_position_.size());
 
 	// Check Joint Limits
-	if (!rtde_control_ -> isJointsWithinSafetyLimits(msg.positions)) {ROS_ERROR("ERROR: Received Joint Position Outside Safety Limits"); return;}
-	// if ((desired_pose.array().abs() > JOINT_LIMITS).any()) {ROS_ERROR("ERROR: Received Joint Position Outside Joint Limits"); return;}
+	if (!rtde_control_ -> isJointsWithinSafetyLimits(msg.positions)) {ROS_ERROR("ERROR: Received Joint Position Outside Safety Limits\n"); return;}
 
-	// Path Length
-	double LP = (desired_pose - actual_pose).array().abs().maxCoeff();
-	double velocity = 1.0, acceleration = 4.0;
-	double T = msg.time_from_start.toSec();
+	// Initialize Velocity and Acceleration
+	double velocity, acceleration = 4.0;
 
-	// Check Acceleration is Sufficient to Reach the Goal in the Desired Time
-	if (acceleration < 4 * LP / std::pow(T,2))
+	// Compute Velocity Using Time
+	if (msg.time_from_start.toSec() != 0)
 	{
-		T = std::sqrt(4 * LP / acceleration);
-		ROS_WARN_STREAM("Robot Acceleration is Not Sufficient to Reach the Goal in the Desired Time | Used the Minimum Time: " << T);
-	}
+		// Path Length
+		double LP = (desired_pose - actual_pose).array().abs().maxCoeff();
+		double T = msg.time_from_start.toSec();
 
-	// Compute Velocity
-	double ta = T/2.0 - 0.5 * std::sqrt((std::pow(T,2) * acceleration - 4.0 * LP) / acceleration + 10e-12);
-	velocity = ta * acceleration;
+		// Check Acceleration is Sufficient to Reach the Goal in the Desired Time
+		if (acceleration < 4 * LP / std::pow(T,2))
+		{
+			T = std::sqrt(4 * LP / acceleration);
+			ROS_WARN_STREAM("Robot Acceleration is Not Sufficient to Reach the Goal in the Desired Time | Used the Minimum Time: " << T << std::endl);
+		}
+
+		// Compute Velocity
+		double ta = T/2.0 - 0.5 * std::sqrt((std::pow(T,2) * acceleration - 4.0 * LP) / acceleration + 10e-12);
+		velocity = ta * acceleration;
+	
+	// Use Given Velocity
+	} else {velocity = msg.velocities[0];}
 
 	// Check Velocity Limits
-	if (velocity > JOINT_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity"); return;}
+	if (velocity > JOINT_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity\n"); return;}
 
 	// Move to Joint Goal
 	rtde_control_ -> moveJ(msg.positions, velocity, acceleration, asynchronous_);
@@ -165,10 +174,12 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPo
 	std::vector<double> desired_pose = Pose2RTDE(msg.cartesian_pose);
 
 	// Check Pose Limits
-	if (!rtde_control_ -> isPoseWithinSafetyLimits(desired_pose)) {ROS_ERROR("ERROR: Received Cartesian Position Outside Safety Limits"); return;}
+	if (!rtde_control_ -> isPoseWithinSafetyLimits(desired_pose)) {ROS_ERROR("ERROR: Received Cartesian Position Outside Safety Limits\n"); return;}
+
+	// TODO: Convert Desired Time to Velocity
 
 	// Check Tool Velocity Limits
-	if (msg.velocity > TOOL_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity"); return;}
+	if (msg.velocity > TOOL_VELOCITY_MAX) {ROS_ERROR("Requested Velocity > Maximum Velocity\n"); return;}
 
 	// Move to Linear Goal
 	rtde_control_ -> moveL(desired_pose, msg.velocity, 1.20, asynchronous_);
@@ -181,7 +192,7 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPo
 void RTDEController::jointVelocityCallback(const std_msgs::Float64MultiArray msg)
 {
 	// Check Input Data Size
-	if (msg.data.size() != 6) {ROS_ERROR("ERROR: Received Joint Velocity Size != 6"); return;}
+	if (msg.data.size() != 6) {ROS_ERROR("ERROR: Received Joint Velocity Size != 6\n"); return;}
 
 	// Get Current and Desired Joint Velocity
 	std::vector<double> current_velocity = rtde_receive_ -> getActualQd();
@@ -195,7 +206,7 @@ void RTDEController::jointVelocityCallback(const std_msgs::Float64MultiArray msg
 	double acceleration = velocity_difference.array().abs().maxCoeff() / ros_rate_.expectedCycleTime().toSec();
 
 	// Check Acceleration Limits
-	if (acceleration > JOINT_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration"); return;}
+	if (acceleration > JOINT_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration\n"); return;}
 
 	// Joint Velocity Publisher
 	rtde_control_ -> speedJ(desired_velocity, acceleration, 0.002);
@@ -222,7 +233,7 @@ void RTDEController::cartesianVelocityCallback(const geometry_msgs::Twist msg)
 	double acceleration = 0.25;
 
 	// Check Acceleration Limits
-	if (acceleration > TOOL_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration"); return;}
+	if (acceleration > TOOL_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration\n"); return;}
 
 	// Cartesian Velocity Publisher
 	rtde_control_ -> speedL(desired_cartesian_velocity, acceleration, 0.002);
@@ -231,15 +242,7 @@ void RTDEController::cartesianVelocityCallback(const geometry_msgs::Twist msg)
 bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
 	// Stop Robot
-	rtde_control_ -> stopJ(2.0);
-
-	// Clear Dashboard Warning Pop-Up
-	rtde_dashboard_ -> connect();
-	rtde_dashboard_ -> closePopup();
-	rtde_dashboard_ -> disconnect();
-
-	// Reset Booleans Variables
-	resetBooleans();
+	stopRobot();
 
 	res.success = true;
 	return res.success;
@@ -606,10 +609,25 @@ bool RTDEController::isPoseReached(Eigen::VectorXd position_error, double moveme
 	else return false;
 }
 
+bool RTDEController::isJointReached()
+{
+	// Compute Joint Error
+	Eigen::VectorXd error = polynomial_fit_.getLastPoint() - Eigen::Map<Eigen::VectorXd>(actual_joint_position_.data(), actual_joint_position_.size());
+	if (error.cwiseAbs().maxCoeff() < JOINT_ERROR && trajectory_time_ > polynomial_fit_.getFinalTime()) return true;
+	else return false;
+}
+
 void RTDEController::moveTrajectory()
 {
 	// Return if No Trajectory Received
 	if (!new_trajectory_received_) return;
+
+	if (isJointReached())
+	{
+		rtde_control_ -> speedStop();
+		new_trajectory_received_ = false;
+		return;
+	}
 
 	// Create the Desired Velocity Vector
 	Eigen::VectorXd trajectory_vel = polynomial_fit_.evaluatePolynomialsDer(trajectory_time_);
@@ -620,9 +638,9 @@ void RTDEController::moveTrajectory()
 	Eigen::VectorXd acc = polynomial_fit_.evaluatePolynomialsDDer(trajectory_time_);
 
 	// Move Robot with Velocity Commands
-	// rtde_control_ -> speedJ(desired_velocity, (acc.cwiseAbs()).maxCoeff());
+	rtde_control_ -> speedJ(desired_velocity, (acc.cwiseAbs()).maxCoeff(), 5e-4);
 
-	// TODO: Increase trajectory_time_ -> 2ms or real value?
+	// Increase trajectory_time_
 	trajectory_time_ += 0.002;
 }
 
@@ -633,6 +651,23 @@ void RTDEController::checkAsyncMovements()
 
 	// Check if Async Operation is Ended -> Trajectory Executed
 	if (rtde_control_ -> getAsyncOperationProgress() < 0) publishTrajectoryExecuted();
+}
+
+void RTDEController::stopRobot()
+{
+	// Stop Robot
+	rtde_control_ -> stopJ(2.0);
+
+	// Wait
+	ros::Duration(0.1).sleep();
+
+	// Clear Dashboard Warning Pop-Up
+	rtde_dashboard_ -> connect();
+	rtde_dashboard_ -> closePopup();
+	rtde_dashboard_ -> disconnect();
+
+	// Reset Booleans Variables
+	resetBooleans();
 }
 
 void RTDEController::checkRobotStatus()
@@ -652,10 +687,18 @@ void RTDEController::checkRobotStatus()
 
 		// Check if Robot Mode is ROBOT_MODE_RUNNING
 		while (rtde_receive_ -> getRobotMode() != ROBOT_MODE_RUNNING) {ROS_INFO_THROTTLE(5, "Wait for Robot Recovery...");}
+	
+	} else if (protectiveStop) {ROS_WARN("PROTECTIVE STOP RECOVERED\n");}
+		
+	if (eStop || protectiveStop)
+	{
+		// Re-Upload RTDE Control Script
+ 		rtde_control_ -> reuploadScript();
+		rtde_control_ -> disconnect();
+		rtde_control_ -> reconnect();
 
-		ros::Duration(3).sleep();
-
-		// TODO: Re-Upload RTDE Control Script
+		// Wait Time For Connection
+		ros::Duration(1).sleep();
 
 		// Print Robot Ready
 		std::cout << std::endl;
@@ -663,13 +706,10 @@ void RTDEController::checkRobotStatus()
 
 		// Reset Booleans
 		resetBooleans();
-
 	}
 
-	if (protectiveStop) ROS_WARN("PROTECTIVE STOP RECOVERED");
-
 	// Check Robot Connection Status
-	if (!rtde_control_ -> isConnected()) ROS_ERROR("ROBOT DISCONNECTED");
+	if (!rtde_control_ -> isConnected()) ROS_ERROR("ROBOT DISCONNECTED\n");
 }
 
 void RTDEController::spinner()

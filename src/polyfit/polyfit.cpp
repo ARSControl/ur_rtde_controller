@@ -31,12 +31,12 @@ bool PolyFit::computePolynomials(const trajectory &traj)
 				if (traj.points[i].acceleration.size())
 				{
 					subA.resize(3, n+1);
-					subB.resize(1, 3);
+					subB.resize(3, 1);
 				}
 				else if (traj.points[i].velocity.size())
 				{
 					subA.resize(2, n+1);
-					subB.resize(1, 2);
+					subB.resize(2, 1);
 				}
 				else
 				{
@@ -47,13 +47,13 @@ bool PolyFit::computePolynomials(const trajectory &traj)
 				subB.setZero();
 
 				double t = traj.points[i].time;
-				for (uint j = 0; j < n + 1; j++)
+				for (int j = 0; j < n + 1; j++)
 				{
 					subA(0, j) = pow(t, n - j);
 
-					if (traj.points[i].velocity.size() && n - j - 1 > 0)
+					if (traj.points[i].velocity.size() && n - j - 1 >= 0)
 						subA(1, j) = (n - j) * std::pow(t, n - j - 1);
-					if (traj.points[i].acceleration.size() && n - j - 1 > 0)
+					if (traj.points[i].acceleration.size() && n - j - 2 >= 0)
 						subA(2, j) = (n - j) * (n - j - 1) * std::pow(t, n - j - 2);
 				}
 				subB(0, 0) = traj.points[i].position[k];
@@ -69,16 +69,20 @@ bool PolyFit::computePolynomials(const trajectory &traj)
 			Eigen::MatrixXd x = A.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(B);
 
 			error = (A * x - B).norm();
+			if (std::isnan(error))
+			{
+				error = error_old;
+				continue;
+			}
 			if (error < toll)
 			{
 				polynomials_[k].n = n;
 				polynomials_[k].coefficients.resize(n + 1);
 				for (uint i = 0; i < n + 1; i++)
 					polynomials_[k].coefficients[i] = x(i, 0);
-				polynomials_[k].final_time = traj.points.end()->time;
-				std::cout << traj.points.back().time << std::endl;
+				polynomials_[k].final_time = traj.points.back().time;
 			}
-			if (std::fabs(error - error_old) < 1000.0*toll)
+			if (std::fabs(error - error_old) < 1000.0 * toll)
 				counter++;
 			else
 				counter = 0;
@@ -121,12 +125,9 @@ Eigen::VectorXd PolyFit::evaluatePolynomialsDer(const double &t)
 double PolyFit::evaluatePolynomialDer(const polynomial &p, const double &t)
 {
 	double eval_time = std::min(p.final_time, t);
-	std::cout << eval_time << std::endl;
-	double deval_pol = *p.coefficients.end() - 1;
+	double deval_pol = * (p.coefficients.end() - 2);
 	for (uint i = 0; i < p.n; i++)
 		deval_pol += (p.n - i) * p.coefficients[i] * std::pow(eval_time, p.n - i - 1);
-	std::cout << deval_pol << std::endl;
-	
 	return deval_pol;
 }
 
@@ -141,7 +142,7 @@ Eigen::VectorXd PolyFit::evaluatePolynomialsDDer(const double &t)
 double PolyFit::evaluatePolynomialDDer(const polynomial &p, const double &t)
 {
 	double eval_time = std::min(p.final_time, t);
-	double ddeval_pol = *p.coefficients.end() - 2;
+	double ddeval_pol = * (p.coefficients.end() - 3);
 	for (uint i = 0; i < p.n - 2; i++)
 		ddeval_pol += (p.n - i - 1) * (p.n - i) * p.coefficients[i] * std::pow(eval_time, p.n - i - 2);
 	return ddeval_pol;
@@ -172,4 +173,14 @@ double PolyFit::evaluateMaxPolynomialsDDer(const double &ts)
 		for (double t = 0.0; t < p.final_time; t += ts)
 			max = std::max(max, (evaluatePolynomialsDDer(t).cwiseAbs()).maxCoeff());
 	return max;
+}
+
+Eigen::VectorXd PolyFit::getLastPoint()
+{
+	return evaluatePolynomials(polynomials_.front().final_time);
+}
+
+double PolyFit::getFinalTime()
+{
+	return polynomials_.front().final_time;
 }

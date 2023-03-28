@@ -157,6 +157,7 @@ class RTDEController {
 		// ---- MOVEMENT FUNCTIONS ---- //
 		void moveTrajectory();
 		void checkAsyncMovements();
+		void stopRobot();
 
 		// ---- UTILITIES FUNCTIONS ---- //
 		void resetBooleans();
@@ -169,6 +170,7 @@ class RTDEController {
 		Eigen::Matrix<double, 4, 4> pose2eigen(geometry_msgs::Pose pose);
 		Eigen::VectorXd computePoseError(Eigen::Matrix<double, 4, 4> T_des, Eigen::Matrix<double, 4, 4> T);
 		bool isPoseReached(Eigen::VectorXd position_error, double movement_precision);
+		bool isJointReached();
 
 };
 
