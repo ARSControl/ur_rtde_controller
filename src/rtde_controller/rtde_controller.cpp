@@ -622,10 +622,15 @@ void RTDEController::moveTrajectory()
 	// Return if No Trajectory Received
 	if (!new_trajectory_received_) return;
 
+	// Check if Trajectory is Ended
 	if (isJointReached())
 	{
+		// Stop Speed Mode
 		rtde_control_ -> speedStop();
-		new_trajectory_received_ = false;
+
+		// Publish Trajectory Executed
+		publishTrajectoryExecuted();
+		resetBooleans();
 		return;
 	}
 
