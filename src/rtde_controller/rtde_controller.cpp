@@ -79,16 +79,22 @@ RTDEController::~RTDEController()
 
 void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg)
 {
-	// Check if the Initial Point == Actual Joint Position
+	// Initialize Error
 	double err = 0.0;
+
+	// Check if the Initial Point == Actual Joint Position
 	for (uint i = 0; i < msg.points.begin()->positions.size(); i++)
 		err = std::max(std::fabs(msg.points.begin()->positions[i] - actual_joint_position_[i]), err);
 
-	// TODO: Add the actual configuration as starting point and add time offset for all the other points or move the robot to the starting configuration
-	// TODO: Ensure initial point and final point with velocity and acceleration equal to 0
-	if (err > JOINT_ERROR) {ROS_ERROR("Trajectory not starting from the actual configuration.\n"); return;}
+	// Return Error If Trajectory Starting Point != First Trajectory Point 
+	if (err > SENSOR_ERROR) {ROS_ERROR("Trajectory Not Starting from the Actual Configuration.\n"); return;}
 
-	// TODO: Spline Interpolation and more...
+	// Ensure Initial and Final Point Velocity = 0
+	if ((Eigen::ArrayXd::Map(msg.points.front().velocities.data(), msg.points.front().velocities.size()) >= Eigen::ArrayXd::Constant(6, SENSOR_ERROR)).any()
+	||  (Eigen::ArrayXd::Map(msg.points.back().velocities.data(), msg.points.back().velocities.size()) >= Eigen::ArrayXd::Constant(6, SENSOR_ERROR)).any())
+		{ROS_ERROR("Trajectory Starting/Final Velocity != 0\n"); return;}
+
+	// Polynomial Interpolation Object
 	PolyFit::trajectory trajectory;
 	trajectory.points.resize(msg.points.size());
 
@@ -104,14 +110,11 @@ void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTraject
 	// Compute Polynomial Fitting
 	if (polynomial_fit_.computePolynomials(trajectory))
 	{
-		// TODO: Check Velocity Limits for All Joints
 		// Check if the Resulting Trajectory Comply with the Limits. 
 		if (polynomial_fit_.evaluateMaxPolynomials(0.002) > JOINT_LIMITS || polynomial_fit_.evaluateMaxPolynomialsDer(0.002) > JOINT_VELOCITY_MAX || polynomial_fit_.evaluateMaxPolynomialsDDer(0.002) > JOINT_ACCELERATION_MAX)
-		{
-			ROS_ERROR("ERROR: Joint Limit Not Satisfied.\n");
-			return;
-		}
+			{ROS_ERROR("ERROR: Joint Limit Not Satisfied.\n"); return;}
 
+		// New Trajectory Received
 		trajectory_time_ = 0.0;
 		new_trajectory_received_ = true;
 		ROS_INFO("New Trajectory Received\n");
@@ -613,7 +616,7 @@ bool RTDEController::isJointReached()
 {
 	// Compute Joint Error
 	Eigen::VectorXd error = polynomial_fit_.getLastPoint() - Eigen::Map<Eigen::VectorXd>(actual_joint_position_.data(), actual_joint_position_.size());
-	if (error.cwiseAbs().maxCoeff() < JOINT_ERROR && trajectory_time_ > polynomial_fit_.getFinalTime()) return true;
+	if (error.cwiseAbs().maxCoeff() < SENSOR_ERROR && trajectory_time_ > polynomial_fit_.getFinalTime()) return true;
 	else return false;
 }
 
