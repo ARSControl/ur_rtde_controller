@@ -452,7 +452,7 @@ void RTDEController::publishJointState()
 	{
 		// Create JointState Message
 		sensor_msgs::JointState joint_state;
-		joint_state.name = {"elbow_joint", "shoulder_lift_joint", "shoulder_pan_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"};
+		joint_state.name = {"shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"};
 
 		// Read Joint Position and Velocity
 		joint_state.position = rtde_receive_ -> getActualQ();
