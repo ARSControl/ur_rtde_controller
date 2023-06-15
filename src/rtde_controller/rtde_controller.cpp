@@ -6,6 +6,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
 	if(!nh_.param<std::string>("/ur_rtde_controller/ROBOT_IP", ROBOT_IP, "192.168.2.30")) {ROS_ERROR_STREAM("Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
 	if(!nh_.param<bool>("/ur_rtde_controller/enable_gripper", enable_gripper_, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper_);}
 	if(!nh_.param<bool>("/ur_rtde_controller/asynchronous", asynchronous_, "False")) {ROS_ERROR_STREAM("Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
+	if(!nh_.param<bool>("/ur_rtde_controller/limit_acc", limit_acc_, "False")) {ROS_ERROR_STREAM("Failed To Get \"limit_acc\" Param. Using Default: " << limit_acc_);}
 
 	// Initialize Dashboard
 	rtde_dashboard_ = new ur_rtde::DashboardClient(ROBOT_IP);
@@ -77,6 +78,7 @@ RTDEController::~RTDEController()
 	ROS_WARN("UR RTDE Controller - Disconnected\n");
 }
 
+// TODO: FIX Trajectory Function -> Doesn't Work with Dynamic Planner
 void RTDEController::jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg)
 {
 	// Initialize Error
@@ -209,7 +211,7 @@ void RTDEController::jointVelocityCallback(const std_msgs::Float64MultiArray msg
 	double acceleration = velocity_difference.array().abs().maxCoeff() / ros_rate_.expectedCycleTime().toSec();
 
 	// Check Acceleration Limits
-	if (acceleration > JOINT_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration\n"); return;}
+	if (limit_acc_ && acceleration > JOINT_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration\n"); return;}
 
 	// Joint Velocity Publisher
 	rtde_control_ -> speedJ(desired_velocity, acceleration, 0.002);
@@ -247,7 +249,14 @@ bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs
 	// Stop Robot
 	stopRobot();
 
-	res.success = true;
+	if (!asynchronous_)
+	{
+		// StopRobot Not Working with Synchronous Operations
+		ROS_WARN("StopRobot Not Working without the Asynchronous Flag");
+		res.success = false;
+
+	} else {res.success = true;}
+
 	return res.success;
 }
 

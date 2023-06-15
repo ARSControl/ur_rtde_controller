@@ -89,6 +89,7 @@ class RTDEController {
 		std::string ROBOT_IP;
 		bool enable_gripper_;
 		bool asynchronous_;
+		bool limit_acc_;
 
 		// ---- GLOBAL VARIABLES ---- //
 		std::vector<double> actual_joint_position_;
