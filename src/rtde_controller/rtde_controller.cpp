@@ -1,5 +1,11 @@
 #include "rtde_controller/rtde_controller.h"
 
+int sign(double value) {
+    if (value > 0) {return 1;}
+	else if (value < 0) {return -1;}
+	else {return 0;}
+}
+
 RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh), ros_rate_(ros_rate)
 {
 	// Load Parameters
@@ -209,6 +215,7 @@ void RTDEController::jointVelocityCallback(const std_msgs::Float64MultiArray msg
 
 	// Compute MAX Acceleration
 	double acceleration = velocity_difference.array().abs().maxCoeff() / ros_rate_.expectedCycleTime().toSec();
+	acceleration = sign(acceleration) * std::max(std::fabs(acceleration), 1.0);
 
 	// Check Acceleration Limits
 	if (limit_acc_ && acceleration > JOINT_ACCELERATION_MAX) {ROS_ERROR("Requested Acceleration > Maximum Acceleration\n"); return;}
