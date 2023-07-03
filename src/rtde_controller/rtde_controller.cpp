@@ -295,6 +295,7 @@ void RTDEController::jointVelocityCallback(const std_msgs::Float64MultiArray msg
 	// Compute MAX Acceleration
 	double acceleration = velocity_difference.array().abs().maxCoeff() / ros_rate_.expectedCycleTime().toSec();
 	acceleration = sign(acceleration) * std::max(std::fabs(acceleration), 1.0);
+	acceleration = 10.0;
 
 	// Check Acceleration Limits
 	if (limit_acc_ && acceleration > JOINT_ACCELERATION_MAX)
