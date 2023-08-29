@@ -1,5 +1,8 @@
 # Position, Speed, Force in Percentage (0-100)
 
+int32 GRIPPER_OPENED = 100
+int32 GRIPPER_CLOSED = 0
+
 float64 position
 float64 speed
 float64 force

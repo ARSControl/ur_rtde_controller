@@ -2,8 +2,8 @@
 
     <!-- Robot Agruments -->
     <arg name="ROBOT_IP"       default="192.168.2.40"/>
-    <arg name="enable_gripper" default="False"/>
-    <arg name="asynchronous"   default="True"/>
+    <arg name="enable_gripper" default="True"/>
+    <arg name="asynchronous"   default="False"/>
     <arg name="limit_acc"      default="True"/>
 
     <!-- RTDE - Position Controller -->
