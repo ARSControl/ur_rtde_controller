@@ -409,7 +409,8 @@ bool RTDEController::getInverseKinematicCallback(ur_rtde_controller::GetInverseK
 	std::vector<double> tcp_pose = Pose2RTDE(req.tcp_position);
 
 	// Compute Inverse Kinematic
-	res.joint_position = rtde_control_->getInverseKinematics(tcp_pose);
+	if (req.near_position.size() == 6) res.joint_position = rtde_control_->getInverseKinematics(tcp_pose, req.near_position);
+	else res.joint_position = rtde_control_->getInverseKinematics(tcp_pose);
 
 	res.success = true;
 	return res.success;

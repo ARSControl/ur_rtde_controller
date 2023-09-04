@@ -1,4 +1,5 @@
 geometry_msgs/Pose tcp_position
+float64[] near_position
 ---
 float64[] joint_position
 bool success
