@@ -5,14 +5,15 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 
 ## Dependencies ##
 
+* ROS2 Foxy
 * Eigen3
 * ur_rtde
 
 ## Installation ##
 
-* Clone the Repository inside the `catkin_ws`:
+* Clone the Repository inside the `colcon_ws`:
 
-        cd ~/catkin_ws/src
+        cd ~/colcon_ws/src
         git clone git@github.com:ARSControl/ur_rtde_controller.git
 
 * Install the RTDE Libraries
@@ -23,8 +24,8 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 
 * Build your workspace
 
-        cd ~/catkin_ws
-        catkin_make
+        cd ~/colcon_ws
+        colcon build --symlink-install
 
 ## Running ##
 
@@ -34,4 +35,4 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 
 * Launch RTDE Controller
   
-        roslaunch ur_rtde_controller rtde_controller.launch ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false
+        ros2 launch ur_rtde_controller rtde_controller_launch.py ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false
