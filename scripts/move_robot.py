@@ -1,52 +1,52 @@
 #!/usr/bin/env python3
 
-import rospy
+import rclpy
+from rclpy.node import Node
+from builtin_interfaces.msg import Duration
 from typing import List
 
-# Import ROS Messages
 from std_msgs.msg import Bool
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 from ur_rtde_controller.msg import CartesianPoint
 
-# Import ROS Services
-from std_srvs.srv import Trigger, TriggerRequest
-from ur_rtde_controller.srv import RobotiQGripperControl, RobotiQGripperControlRequest
-from ur_rtde_controller.srv import GetForwardKinematic, GetForwardKinematicRequest, GetForwardKinematicResponse
-from ur_rtde_controller.srv import GetInverseKinematic, GetInverseKinematicRequest, GetInverseKinematicResponse
+from std_srvs.srv import Trigger
+from ur_rtde_controller.srv import RobotiQGripperControl, GetForwardKinematic, GetInverseKinematic
 
 GRIPPER_OPEN = 100
 GRIPPER_CLOSE = 0
 DYNAMIC_PLANNER = False
 
-class UR10e_RTDE_Move():
+class UR10e_RTDE_Move(Node):
 
     trajectory_execution_received = False
     trajectory_executed = False
 
-    def __init__(self):
+    def __init__(self, node_name='ur10e_rtde_move'):
+
+        # Initialize ROS node
+        super().__init__(node_name)
 
         # Publishers
-        self.ur10Pub = rospy.Publisher('/desired_joint_pose', JointState, queue_size=1)
-        self.jointPub = rospy.Publisher('/ur_rtde/controllers/joint_space_controller/command', JointTrajectoryPoint, queue_size=1)
-        self.cartesianPub = rospy.Publisher('/ur_rtde/controllers/cartesian_space_controller/command', CartesianPoint, queue_size=1)
+        self.ur10Pub      = self.create_publisher(JointState, '/desired_joint_pose', 1)
+        self.jointPub     = self.create_publisher(JointTrajectoryPoint, '/ur_rtde/controllers/joint_space_controller/command', 1)
+        self.cartesianPub = self.create_publisher(CartesianPoint, '/ur_rtde/controllers/cartesian_space_controller/command', 1)
 
         # Subscribers
-        self.trajectory_execution_sub = rospy.Subscriber('/trajectory_execution', Bool, self.trajectory_execution_callback)
+        self.trajectory_execution_sub = self.create_subscription(Bool, '/trajectory_execution', self.trajectoryExecutionCallback, 1)
 
         # Init Gripper Service
-        self.gripper_srv = rospy.ServiceProxy('/ur_rtde/robotiq_gripper/command', RobotiQGripperControl)
+        self.gripper_client = self.create_client(RobotiQGripperControl, '/ur_rtde/robotiq_gripper/command')
 
         # IK, FK Services
-        self.get_FK_srv = rospy.ServiceProxy('ur_rtde/getFK', GetForwardKinematic)
-        self.get_IK_srv = rospy.ServiceProxy('ur_rtde/getIK', GetInverseKinematic)
+        self.get_FK_client = self.create_client(GetForwardKinematic, 'ur_rtde/getFK')
+        self.get_IK_client = self.create_client(GetInverseKinematic, 'ur_rtde/getIK')
 
         # Stop Robot Service
-        self.stop_service = rospy.ServiceProxy('/ur_rtde/controllers/stop_robot', Trigger)
-        self.stop_req = TriggerRequest()
+        self.stop_service_client = self.create_client(Trigger, '/ur_rtde/controllers/stop_robot')
 
-    def trajectory_execution_callback(self, msg:Bool):
+    def trajectoryExecutionCallback(self, msg:Bool):
 
         """ Trajectory Execution Callback """
 
@@ -74,19 +74,19 @@ class UR10e_RTDE_Move():
 
             # Destination Position (if `time_from_start` = 0 -> read velocity[0])
             pos = JointTrajectoryPoint()
-            pos.time_from_start = rospy.Duration(0)
+            pos.time_from_start = Duration(sec=0, nanosec=0)
             pos.velocities = [0.4]
             pos.positions = joint_positions
 
             # Publish Joint Position
-            rospy.logwarn('Joint Space Movement')
+            self.get_logger().warn('Joint Space Movement')
             self.jointPub.publish(pos)
 
         # Wait for Trajectory Execution
-        while not self.trajectory_execution_received and not rospy.is_shutdown():
+        while not self.trajectory_execution_received and rclpy.ok():
 
             # Debug Print
-            rospy.loginfo_throttle(5, 'Waiting for Trajectory Execution')
+            self.get_logger().info('Waiting for Trajectory Execution')
 
         # Reset Trajectory Execution Flag
         self.trajectory_execution_received = False
@@ -107,14 +107,14 @@ class UR10e_RTDE_Move():
         pos.velocity = 0.02
 
         # Publish Cartesian Position
-        rospy.logwarn('Cartesian Movement')
+        self.get_logger().warn('Cartesian Movement')
         self.cartesianPub.publish(pos)
 
         # Wait for Trajectory Execution
-        while not self.trajectory_execution_received and not rospy.is_shutdown():
+        while not self.trajectory_execution_received and rclpy.ok():
 
             # Debug Print
-            rospy.loginfo_throttle(5, 'Waiting for Trajectory Execution')
+            self.get_logger().info('Waiting for Trajectory Execution')
 
         # Reset Trajectory Execution Flag
         self.trajectory_execution_received = False
@@ -126,27 +126,35 @@ class UR10e_RTDE_Move():
     def FK(self, joint_positions:List[float]) -> Pose:
 
         # Set Forward Kinematic Request
-        req = GetForwardKinematicRequest()
+        req = GetForwardKinematic.Request()
         req.joint_position = joint_positions
 
-        # Call Forward Kinematic
-        rospy.wait_for_service('ur_rtde/getFK')
-        res: GetForwardKinematicResponse = self.get_FK_srv(req)
+        # Wait For Service
+        self.get_FK_client.wait_for_service('ur_rtde/getFK')
+
+        # Call Forward Kinematic - Asynchronous
+        future = self.get_FK_client.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        res:GetForwardKinematic.Response = future.result()
 
         return res.tcp_position
 
     def IK(self, pose:Pose, near_pose:List[float]=None) -> List[float]:
 
         # Set Inverse Kinematic Request
-        req = GetInverseKinematicRequest()
+        req = GetInverseKinematic.Request()
         req.tcp_position = pose
 
         if near_pose is not None and len(near_pose) == 6: req.near_position = near_pose
         else: req.near_position = []
 
-        # Call Inverse Kinematic
-        rospy.wait_for_service('ur_rtde/getIK')
-        res: GetInverseKinematicResponse = self.get_IK_srv(req)
+        # Wait For Service
+        self.get_IK_client.wait_for_service('ur_rtde/getIK')
+
+        # Call Inverse Kinematic - Asynchronous
+        future = self.get_IK_client.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        res:GetInverseKinematic.Response = future.result()
 
         return list(res.joint_position)
 
@@ -158,18 +166,28 @@ class UR10e_RTDE_Move():
         if not gripper_enabled: return True
 
         # Set Gripper Request
-        req = RobotiQGripperControlRequest()
+        req = RobotiQGripperControl.Request()
         req.position, req.speed, req.force = position, 100, 100
 
-        # Call Gripper Service
-        rospy.wait_for_service('/ur_rtde/robotiq_gripper/command')
-        res = self.gripper_srv(req)
+        # Wait For Service
+        self.gripper_client.wait_for_service('/ur_rtde/robotiq_gripper/command')
+
+        # Call Gripper Service - Asynchronous
+        future = self.gripper_client.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        res:RobotiQGripperControl.Response = future.result()
 
         return True
 
-    def stopRobot(self) -> bool:
+    def stop_robot(self) -> bool:
 
-        rospy.wait_for_service('/ur_rtde/controllers/stop_robot')
-        self.stop_req = TriggerRequest()
-        self.stop_response = self.stop_service(self.stop_req)
+        # Wait For Service
+        self.stop_service_client.wait_for_service('/ur_rtde/controllers/stop_robot')
+
+        # Call Stop Service - Asynchronous
+        req = Trigger.Request()
+        future = self.stop_service_client.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        res:Trigger.Response = future.result()
+
         return True
