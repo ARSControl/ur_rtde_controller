@@ -34,7 +34,8 @@ class UR10e_RTDE_Move(Node):
         self.cartesianPub = self.create_publisher(CartesianPoint, '/ur_rtde/controllers/cartesian_space_controller/command', 1)
 
         # Subscribers
-        self.trajectory_execution_sub = self.create_subscription(Bool, '/trajectory_execution', self.trajectoryExecutionCallback, 1)
+        if DYNAMIC_PLANNER: self.trajectory_execution_sub = self.create_subscription(Bool, '/trajectory_execution', self.trajectoryExecutionCallback, 1)
+        else: self.trajectory_execution_sub = self.create_subscription(Bool, '/ur_rtde/trajectory_executed', self.trajectoryExecutionCallback, 1)
 
         # Init Gripper Service
         self.gripper_client = self.create_client(RobotiQGripperControl, '/ur_rtde/robotiq_gripper/command')
@@ -86,7 +87,7 @@ class UR10e_RTDE_Move(Node):
         while not self.trajectory_execution_received and rclpy.ok():
 
             # Debug Print
-            self.get_logger().info('Waiting for Trajectory Execution')
+            self.get_logger().info('Waiting for Trajectory Execution', throttle_duration_sec=5, skip_first=True)
 
         # Reset Trajectory Execution Flag
         self.trajectory_execution_received = False
@@ -114,7 +115,7 @@ class UR10e_RTDE_Move(Node):
         while not self.trajectory_execution_received and rclpy.ok():
 
             # Debug Print
-            self.get_logger().info('Waiting for Trajectory Execution')
+            self.get_logger().info('Waiting for Trajectory Execution', throttle_duration_sec=5, skip_first=True)
 
         # Reset Trajectory Execution Flag
         self.trajectory_execution_received = False
@@ -158,7 +159,7 @@ class UR10e_RTDE_Move(Node):
 
         return list(res.joint_position)
 
-    def move_gripper(self, position, gripper_enabled=True) -> bool:
+    def move_gripper(self, position, speed=100, force=100,gripper_enabled=True) -> bool:
 
         """ Open-Close Gripper Function """
 
@@ -167,7 +168,7 @@ class UR10e_RTDE_Move(Node):
 
         # Set Gripper Request
         req = RobotiQGripperControl.Request()
-        req.position, req.speed, req.force = position, 100, 100
+        req.position, req.speed, req.force = position, speed, force
 
         # Wait For Service
         self.gripper_client.wait_for_service('/ur_rtde/robotiq_gripper/command')
