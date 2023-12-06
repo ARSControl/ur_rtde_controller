@@ -12,11 +12,17 @@ double durationToSec(rclcpp::Duration duration) {
 
 RTDEController::RTDEController(): Node ("ur_rtde_controller") {
 
+	// Declare Parameters
+	declare_parameter<std::string>("ROBOT_IP", std::string("192.168.2.30"));
+	declare_parameter<bool>("enable_gripper", false);
+	declare_parameter<bool>("asynchronous", false);
+	declare_parameter<bool>("limit_acc", false);
+
 	// Load Parameters
-	if(!get_parameter_or("/ur_rtde_controller/ROBOT_IP", ROBOT_IP, std::string("192.168.2.30"))) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
-	if(!get_parameter_or("/ur_rtde_controller/enable_gripper", enable_gripper_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper_);}
-	if(!get_parameter_or("/ur_rtde_controller/asynchronous", asynchronous_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
-	if(!get_parameter_or("/ur_rtde_controller/limit_acc", limit_acc_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"limit_acc\" Param. Using Default: " << limit_acc_);}
+	if(!get_parameter_or("ROBOT_IP", ROBOT_IP, std::string("192.168.2.30"))) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
+	if(!get_parameter_or("enable_gripper", enable_gripper_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper_);}
+	if(!get_parameter_or("asynchronous", asynchronous_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
+	if(!get_parameter_or("limit_acc", limit_acc_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"limit_acc\" Param. Using Default: " << limit_acc_);}
 
 	// Initialize Dashboard
 	rtde_dashboard_ = new ur_rtde::DashboardClient(ROBOT_IP);
@@ -493,8 +499,9 @@ void RTDEController::publishJointState()
 		// Publish JointState
 		joint_state_pub_ -> publish(joint_state);
 
-		//FIX: // Sleep to ROS Rate
-		// ros_rate_.sleep();
+		// Sleep to ROS Rate
+		ros_rate.sleep();
+
 	}
 }
 
@@ -511,8 +518,9 @@ void RTDEController::publishTCPPose()
 		// Publish TCP Pose
 		tcp_pose_pub_ -> publish(pose);
 
-		//FIX: // Sleep to ROS Rate
-		// ros_rate_.sleep();
+		// Sleep to ROS Rate
+		ros_rate.sleep();
+
 	}
 }
 
@@ -535,8 +543,9 @@ void RTDEController::publishFTSensor()
 		// Publish FTSensor Forces
 		ft_sensor_pub_ -> publish(forces);
 
-		//FIX: // Sleep to ROS Rate
-		// ros_rate_.sleep();
+		// Sleep to ROS Rate
+		ros_rate.sleep();
+
 	}
 }
 
@@ -772,8 +781,9 @@ void RTDEController::spinner()
 	// Check Async Movements Status
 	checkAsyncMovements();
 
-	//FIX: // Sleep to ROS Rate
-	// ros_rate_.sleep();
+	// Sleep to ROS Rate
+	ros_rate.sleep();
+
 }
 
 // Create Null-Pointers to the RTDE Class and the Threads
@@ -814,9 +824,6 @@ int main(int argc, char **argv) {
 
 	// Create a New RTDEController
     rtde = new RTDEController();
-
-    // ROS Initialization Parameters
-    rclcpp::Rate ros_rate = rclcpp::Rate(rtde -> ros_rate_);
 
 	// Publish JointState, TCPPose, FTSensor in separate Threads
 	publishJointState = new std::thread(&RTDEController::publishJointState,	rtde);

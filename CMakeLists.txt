@@ -88,6 +88,7 @@ ament_python_install_package(${PROJECT_NAME})
 
 # Install Python Scripts
 install(PROGRAMS
+  scripts/joint_command_publisher.py
   scripts/generate_trajectory.py
   scripts/move_robot.py
   DESTINATION lib/${PROJECT_NAME}

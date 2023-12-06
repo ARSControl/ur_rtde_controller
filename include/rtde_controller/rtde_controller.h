@@ -80,6 +80,7 @@ public:
 
     // ROS2 Rate
     double ros_rate_ = 500.00;
+    rclcpp::Rate ros_rate = rclcpp::Rate(ros_rate_);
 
 private:
 
