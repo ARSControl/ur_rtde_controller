@@ -5,6 +5,9 @@ from rclpy.node import Node
 from builtin_interfaces.msg import Duration
 from typing import List
 
+import roboticstoolbox as rtb, numpy as np
+from roboticstoolbox.tools.types import ArrayLike, NDArray
+
 from std_msgs.msg import Bool
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState
@@ -18,15 +21,19 @@ GRIPPER_OPEN = 100
 GRIPPER_CLOSE = 0
 DYNAMIC_PLANNER = False
 
-class UR10e_RTDE_Move(Node):
+class UR_RTDE_Move(Node):
 
     trajectory_execution_received = False
     trajectory_executed = False
 
-    def __init__(self, node_name='ur10e_rtde_move'):
+    def __init__(self, node_name='ur_rtde_move', robot_model='ur10e'):
 
         # Initialize ROS node
-        super().__init__(node_name)
+        super().__init__(node_name, enable_rosout=False)
+        
+        # Create Robot - Robotic Toolbox
+        self.robot = rtb.models.UR10() if robot_model.lower() in ['ur10','ur10e'] else rtb.models.UR5() if robot_model.lower() in ['ur5','ur5e'] else None
+        if self.robot is None: raise Exception(f"Robot Model {robot_model} not supported")
 
         # Publishers
         self.ur10Pub      = self.create_publisher(JointState, '/desired_joint_pose', 1)
@@ -158,6 +165,30 @@ class UR10e_RTDE_Move(Node):
         res:GetInverseKinematic.Response = future.result()
 
         return list(res.joint_position)
+    
+    def Jacobian(self, joint_positions:ArrayLike) -> np.ndarray:
+
+        """ Get Jacobian Matrix """
+
+        return self.robot.jacob0(joint_positions)
+
+    def JacobianDot(self, joint_positions:ArrayLike, joint_velocities:ArrayLike) -> np.ndarray:
+
+        """ Get Jacobian Derivative Matrix """
+
+        return self.robot.jacob0_dot(joint_positions, joint_velocities)
+
+    def JacobianInverse(self, joint_positions:ArrayLike) -> np.ndarray:
+
+        """ Get Jacobian Inverse Matrix """
+
+        return np.linalg.inv(self.robot.jacob0(joint_positions))
+
+    def getMaxJointVelocity(self) -> np.ndarray:
+
+        """ Get Max Joint Velocity """
+
+        return self.robot.qlim
 
     def move_gripper(self, position, speed=100, force=100,gripper_enabled=True) -> bool:
 
