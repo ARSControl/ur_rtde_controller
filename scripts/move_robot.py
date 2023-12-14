@@ -30,7 +30,7 @@ class UR_RTDE_Move(Node):
 
         # Initialize ROS node
         super().__init__(node_name, enable_rosout=False)
-        
+
         # Create Robot - Robotic Toolbox
         self.robot = rtb.models.UR10() if robot_model.lower() in ['ur10','ur10e'] else rtb.models.UR5() if robot_model.lower() in ['ur5','ur5e'] else None
         if self.robot is None: raise Exception(f"Robot Model {robot_model} not supported")
@@ -165,7 +165,7 @@ class UR_RTDE_Move(Node):
         res:GetInverseKinematic.Response = future.result()
 
         return list(res.joint_position)
-    
+
     def Jacobian(self, joint_positions:ArrayLike) -> np.ndarray:
 
         """ Get Jacobian Matrix """
