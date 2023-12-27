@@ -73,7 +73,7 @@ add_library(polyfit_lib src/polyfit/polyfit.cpp)
 
 # RTDE Controller - C++ Executables
 add_executable(rtde_controller src/rtde_controller/rtde_controller.cpp)
-ament_target_dependencies(rtde_controller rclcpp)
+ament_target_dependencies(rtde_controller rclcpp std_msgs sensor_msgs geometry_msgs trajectory_msgs std_srvs)
 rosidl_target_interfaces(rtde_controller ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_link_libraries(rtde_controller ur_rtde::rtde polyfit_lib)
 
@@ -84,7 +84,7 @@ install(TARGETS
 )
 
 # Install Python Modules
-ament_python_install_package(${PROJECT_NAME})
+ament_python_install_package(scripts)
 
 # Install Python Scripts
 install(PROGRAMS
