@@ -43,13 +43,17 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
 	// RobotiQ Gripper
 	if (enable_gripper_) {
 
-		// Initialize Gripper
-		robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, false);
-		robotiq_gripper_ -> connect();
-		robotiq_gripper_ -> activate();
+		try {
 
-		// Gripper Service Server
-    	robotiq_gripper_server_ = create_service<ur_rtde_controller::srv::RobotiQGripperControl>("/ur_rtde/robotiq_gripper/command", std::bind(&RTDEController::RobotiQGripperCallback, this, std::placeholders::_1, std::placeholders::_2));
+			// Initialize Gripper
+			robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, false);
+			robotiq_gripper_ -> connect();
+			robotiq_gripper_ -> activate();
+
+			// Gripper Service Server
+			robotiq_gripper_server_ = create_service<ur_rtde_controller::srv::RobotiQGripperControl>("/ur_rtde/robotiq_gripper/command", std::bind(&RTDEController::RobotiQGripperCallback, this, std::placeholders::_1, std::placeholders::_2));
+
+		} catch(const std::exception& e) {std::cerr << "Error: " << e.what() << "\t|\t Failed to Start the RobotiQ 2F Gripper";}
 
 	}
 
