@@ -53,7 +53,7 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
 			// Gripper Service Server
 			robotiq_gripper_server_ = create_service<ur_rtde_controller::srv::RobotiQGripperControl>("/ur_rtde/robotiq_gripper/command", std::bind(&RTDEController::RobotiQGripperCallback, this, std::placeholders::_1, std::placeholders::_2));
 
-		} catch(const std::exception& e) {std::cerr << "Error: " << e.what() << "\t|\t Failed to Start the RobotiQ 2F Gripper";}
+		} catch(const std::exception& e) {std::cerr << "Error: " << e.what() << std::endl; RCLCPP_ERROR(get_logger(), "Failed to Start the RobotiQ 2F Gripper");}
 
 	}
 
