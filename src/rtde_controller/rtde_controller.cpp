@@ -24,21 +24,38 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
 	if(!get_parameter_or("asynchronous", asynchronous_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
 	if(!get_parameter_or("limit_acc", limit_acc_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"limit_acc\" Param. Using Default: " << limit_acc_);}
 
-	// Initialize Dashboard
-	rtde_dashboard_ = new ur_rtde::DashboardClient(ROBOT_IP);
+	// Initialize Robot
+	while (rclcpp::ok() && !robot_initialized) {
 
-	// Check Remote Control Status
-	rtde_dashboard_ -> connect();
-	while (!rtde_dashboard_ -> isInRemoteControl()) {RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 5000, "ERROR: Robot Not in RemoteControl Mode\n");}
+		// Initialize Dashboard
+		if (!rtde_dashboard_initialized) {try {rtde_dashboard_ = new ur_rtde::DashboardClient(ROBOT_IP); rtde_dashboard_initialized = true;}
+		catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the Dashboard Client:\n" << e.what());}}
 
-	// RTDE Library
-	rtde_control_	= new ur_rtde::RTDEControlInterface(ROBOT_IP);
-	rtde_receive_	= new ur_rtde::RTDEReceiveInterface(ROBOT_IP);
-	rtde_io_		= new ur_rtde::RTDEIOInterface(ROBOT_IP);
+		// Check Remote Control Status
+		if (!rtde_dashboard_connected) {try {rtde_dashboard_ -> connect(); rtde_dashboard_connected = true;
+		while (!rtde_dashboard_ -> isInRemoteControl()) {RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 5000, "ERROR: Robot Not in RemoteControl Mode\n");}}
+		catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Connect to the Dashboard Server:\n" << e.what());}}
 
-	// Reupload RTDE Control Script if Needed
-	if (!rtde_dashboard_ -> running()) rtde_control_ -> reuploadScript();
-	rtde_dashboard_ -> disconnect();
+		// RTDE Control Library
+		if (!rtde_control_initialized) try {rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP); rtde_control_initialized = true;}
+		catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the RTDE Control Interface:\n" << e.what());}
+
+		// RTDE Receive Library
+		if (!rtde_receive_initialized) try {rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ROBOT_IP); rtde_receive_initialized = true;}
+		catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the RTDE Receive Interface:\n" << e.what());}
+
+		// RTDE IO Library
+		if (!rtde_io_initialized) try {rtde_io_ = new ur_rtde::RTDEIOInterface(ROBOT_IP); rtde_io_initialized = true;}
+		catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the RTDE IO Interface:\n" << e.what());}
+
+		// Reupload RTDE Control Script if Needed
+		if (rtde_dashboard_initialized && !rtde_dashboard_ -> running()) try {rtde_control_ -> reuploadScript(); rtde_dashboard_ -> disconnect();}
+		catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Reupload the RTDE Control Script:\n" << e.what());}
+
+		// Robot Initialized
+		if (rtde_dashboard_initialized && rtde_dashboard_connected && rtde_control_initialized && rtde_receive_initialized && rtde_io_initialized) robot_initialized = true;
+
+	}
 
 	// RobotiQ Gripper
 	if (enable_gripper_) {

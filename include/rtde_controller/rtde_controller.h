@@ -90,6 +90,14 @@ private:
     bool asynchronous_;
     bool limit_acc_;
 
+    // Initialization Variables
+    bool rtde_dashboard_initialized = false;
+	bool rtde_dashboard_connected = false;
+    bool rtde_control_initialized = false;
+    bool rtde_receive_initialized = false;
+    bool rtde_io_initialized = false;
+    bool robot_initialized = false;
+
     // Global Variables
     std::vector<double> actual_joint_position_;
     std::vector<double> actual_joint_velocity_;
