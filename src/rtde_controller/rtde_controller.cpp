@@ -32,20 +32,20 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
 		catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the Dashboard Client:\n" << e.what());}}
 
 		// Check Remote Control Status
-		if (!rtde_dashboard_connected) {try {rtde_dashboard_ -> connect(); rtde_dashboard_connected = true;
+		if (rtde_dashboard_initialized && !rtde_dashboard_connected) {try {rtde_dashboard_ -> connect(); rtde_dashboard_connected = true;
 		while (!rtde_dashboard_ -> isInRemoteControl()) {RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 5000, "ERROR: Robot Not in RemoteControl Mode\n");}}
 		catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Connect to the Dashboard Server:\n" << e.what());}}
 
 		// RTDE Control Library
-		if (!rtde_control_initialized) try {rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP); rtde_control_initialized = true;}
+		if (rtde_dashboard_connected && !rtde_control_initialized) try {rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP); rtde_control_initialized = true;}
 		catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the RTDE Control Interface:\n" << e.what());}
 
 		// RTDE Receive Library
-		if (!rtde_receive_initialized) try {rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ROBOT_IP); rtde_receive_initialized = true;}
+		if (rtde_dashboard_connected && !rtde_receive_initialized) try {rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ROBOT_IP); rtde_receive_initialized = true;}
 		catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the RTDE Receive Interface:\n" << e.what());}
 
 		// RTDE IO Library
-		if (!rtde_io_initialized) try {rtde_io_ = new ur_rtde::RTDEIOInterface(ROBOT_IP); rtde_io_initialized = true;}
+		if (rtde_dashboard_connected && !rtde_io_initialized) try {rtde_io_ = new ur_rtde::RTDEIOInterface(ROBOT_IP); rtde_io_initialized = true;}
 		catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the RTDE IO Interface:\n" << e.what());}
 
 		// Reupload RTDE Control Script if Needed
