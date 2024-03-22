@@ -65,7 +65,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
             enable_gripper_server_  = nh_.advertiseService("/ur_rtde/robotiq_gripper/enable",  &RTDEController::enableRobotiQGripperCallback, this);
             disable_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/disable", &RTDEController::disableRobotiQGripperCallback, this);
 
-        } catch(const std::exception& e) {std::cerr << "Error: " << e.what() << std::endl; RCLCPP_ERROR(get_logger(), "Failed to Start the RobotiQ 2F Gripper");}
+        } catch(const std::exception& e) {std::cerr << "Error: " << e.what() << std::endl; ROS_ERROR("Failed to Start the RobotiQ 2F Gripper");}
 
     }
 
