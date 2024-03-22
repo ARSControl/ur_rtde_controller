@@ -1,0 +1,7 @@
+invoke
+matplotlib
+numpy
+roboticstoolbox-python
+scipy
+spatialmath
+termcolor
