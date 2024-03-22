@@ -65,120 +65,120 @@
 
 class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<RTDEController> {
 
-public:
+    public:
 
-    RTDEController();
-    ~RTDEController();
+        RTDEController();
+        ~RTDEController();
 
-    void spinner(void);
+        void spinner(void);
 
-    // ROS2 Publishers Functions
-    void publishJointState();
-    void publishTCPPose();
-    void publishFTSensor();
-    bool shutdown_ = false;
+        // ROS2 Publishers Functions
+        void publishJointState();
+        void publishTCPPose();
+        void publishFTSensor();
+        bool shutdown_ = false;
 
-    // ROS2 Rate
-    double ros_rate_ = 500.00;
-    rclcpp::Rate ros_rate = rclcpp::Rate(ros_rate_);
+        // ROS2 Rate
+        double ros_rate_ = 500.00;
+        rclcpp::Rate ros_rate = rclcpp::Rate(ros_rate_);
 
-private:
+    private:
 
-    // Parameters
-    std::string ROBOT_IP;
-    bool enable_gripper_;
-    bool asynchronous_;
-    bool limit_acc_;
+        // Parameters
+        std::string ROBOT_IP;
+        bool enable_gripper_;
+        bool asynchronous_;
+        bool limit_acc_;
 
-    // Initialization Variables
-    bool rtde_dashboard_initialized = false;
-	bool rtde_dashboard_connected = false;
-    bool rtde_control_initialized = false;
-    bool rtde_receive_initialized = false;
-    bool rtde_io_initialized = false;
-    bool robot_initialized = false;
+        // Initialization Variables
+        bool rtde_dashboard_initialized = false;
+        bool rtde_dashboard_connected = false;
+        bool rtde_control_initialized = false;
+        bool rtde_receive_initialized = false;
+        bool rtde_io_initialized = false;
+        bool robot_initialized = false;
 
-    // Global Variables
-    std::vector<double> actual_joint_position_;
-    std::vector<double> actual_joint_velocity_;
-    geometry_msgs::msg::Pose actual_cartesian_pose_;
-    bool new_trajectory_received_ = false;
-    bool new_async_joint_pose_received_ = false;
-    bool new_async_cartesian_pose_received_ = false;
+        // Global Variables
+        std::vector<double> actual_joint_position_;
+        std::vector<double> actual_joint_velocity_;
+        geometry_msgs::msg::Pose actual_cartesian_pose_;
+        bool new_trajectory_received_ = false;
+        bool new_async_joint_pose_received_ = false;
+        bool new_async_cartesian_pose_received_ = false;
 
-    // Trajectory Variables
-    PolyFit fitting;
-    PolyFit polynomial_fit_;
-    double trajectory_time_;
+        // Trajectory Variables
+        PolyFit fitting;
+        PolyFit polynomial_fit_;
+        double trajectory_time_;
 
-    // UR RTDE Library
-    ur_rtde::RTDEControlInterface *rtde_control_;
-    ur_rtde::RTDEReceiveInterface *rtde_receive_;
-    ur_rtde::RTDEIOInterface *rtde_io_;
-    ur_rtde::DashboardClient *rtde_dashboard_;
+        // UR RTDE Library
+        ur_rtde::RTDEControlInterface *rtde_control_;
+        ur_rtde::RTDEReceiveInterface *rtde_receive_;
+        ur_rtde::RTDEIOInterface *rtde_io_;
+        ur_rtde::DashboardClient *rtde_dashboard_;
 
-    // RobotiQ Gripper
-    ur_rtde::RobotiqGripper *robotiq_gripper_;
+        // RobotiQ Gripper
+        ur_rtde::RobotiqGripper *robotiq_gripper_;
 
-    // ROS2 Publishers
-    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
-    rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr tcp_pose_pub_;
-    rclcpp::Publisher<geometry_msgs::msg::Wrench>::SharedPtr ft_sensor_pub_;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr trajectory_executed_pub_;
+        // ROS2 Publishers
+        rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr tcp_pose_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::Wrench>::SharedPtr ft_sensor_pub_;
+        rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr trajectory_executed_pub_;
 
-	// ROS2 Subscribers and Callbacks
-    rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr trajectory_command_sub_;
-    rclcpp::Subscription<trajectory_msgs::msg::JointTrajectoryPoint>::SharedPtr joint_goal_command_sub_;
-    rclcpp::Subscription<ur_rtde_controller::msg::CartesianPoint>::SharedPtr cartesian_goal_command_sub_;
-    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr joint_velocity_command_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cartesian_velocity_command_sub_;
-    void jointTrajectoryCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
-    void jointGoalCallback(const trajectory_msgs::msg::JointTrajectoryPoint::SharedPtr msg);
-    void cartesianGoalCallback(const ur_rtde_controller::msg::CartesianPoint::SharedPtr msg);
-    void jointVelocityCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
-    void cartesianVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
+        // ROS2 Subscribers and Callbacks
+        rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr trajectory_command_sub_;
+        rclcpp::Subscription<trajectory_msgs::msg::JointTrajectoryPoint>::SharedPtr joint_goal_command_sub_;
+        rclcpp::Subscription<ur_rtde_controller::msg::CartesianPoint>::SharedPtr cartesian_goal_command_sub_;
+        rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr joint_velocity_command_sub_;
+        rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cartesian_velocity_command_sub_;
+        void jointTrajectoryCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
+        void jointGoalCallback(const trajectory_msgs::msg::JointTrajectoryPoint::SharedPtr msg);
+        void cartesianGoalCallback(const ur_rtde_controller::msg::CartesianPoint::SharedPtr msg);
+        void jointVelocityCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
+        void cartesianVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
 
-	// ROS2 Service Servers and Callbacks
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr stop_robot_server_;
-    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr set_async_parameter_server_;
-    rclcpp::Service<ur_rtde_controller::srv::StartFreedriveMode>::SharedPtr start_FreedriveMode_server_;
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr stop_FreedriveMode_server_;
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr zeroFT_sensor_server_;
-    rclcpp::Service<ur_rtde_controller::srv::GetForwardKinematic>::SharedPtr get_FK_server_;
-    rclcpp::Service<ur_rtde_controller::srv::GetInverseKinematic>::SharedPtr get_IK_server_;
-    rclcpp::Service<ur_rtde_controller::srv::GetRobotStatus>::SharedPtr get_safety_status_server_;
-    rclcpp::Service<ur_rtde_controller::srv::RobotiQGripperControl>::SharedPtr robotiq_gripper_server_;
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr enable_gripper_server_;
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr disable_gripper_server_;
-    bool stopRobotCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
-    bool setAsyncParameterCallback(const std_srvs::srv::SetBool::Request::SharedPtr req, std_srvs::srv::SetBool::Response::SharedPtr res);
-    bool startFreedriveModeCallback(const ur_rtde_controller::srv::StartFreedriveMode::Request::SharedPtr req, ur_rtde_controller::srv::StartFreedriveMode::Response::SharedPtr res);
-    bool stopFreedriveModeCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
-    bool zeroFTSensorCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
-    bool getForwardKinematicCallback(const ur_rtde_controller::srv::GetForwardKinematic::Request::SharedPtr req, ur_rtde_controller::srv::GetForwardKinematic::Response::SharedPtr res);
-    bool getInverseKinematicCallback(const ur_rtde_controller::srv::GetInverseKinematic::Request::SharedPtr req, ur_rtde_controller::srv::GetInverseKinematic::Response::SharedPtr res);
-    bool getSafetyStatusCallback(const ur_rtde_controller::srv::GetRobotStatus::Request::SharedPtr req, ur_rtde_controller::srv::GetRobotStatus::Response::SharedPtr res);
-    bool RobotiQGripperCallback(const ur_rtde_controller::srv::RobotiQGripperControl::Request::SharedPtr req, ur_rtde_controller::srv::RobotiQGripperControl::Response::SharedPtr res);
-    bool enableRobotiQGripperCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
-    bool disableRobotiQGripperCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
+        // ROS2 Service Servers and Callbacks
+        rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr stop_robot_server_;
+        rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr set_async_parameter_server_;
+        rclcpp::Service<ur_rtde_controller::srv::StartFreedriveMode>::SharedPtr start_FreedriveMode_server_;
+        rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr stop_FreedriveMode_server_;
+        rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr zeroFT_sensor_server_;
+        rclcpp::Service<ur_rtde_controller::srv::GetForwardKinematic>::SharedPtr get_FK_server_;
+        rclcpp::Service<ur_rtde_controller::srv::GetInverseKinematic>::SharedPtr get_IK_server_;
+        rclcpp::Service<ur_rtde_controller::srv::GetRobotStatus>::SharedPtr get_safety_status_server_;
+        rclcpp::Service<ur_rtde_controller::srv::RobotiQGripperControl>::SharedPtr robotiq_gripper_server_;
+        rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr enable_gripper_server_;
+        rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr disable_gripper_server_;
+        bool stopRobotCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
+        bool setAsyncParameterCallback(const std_srvs::srv::SetBool::Request::SharedPtr req, std_srvs::srv::SetBool::Response::SharedPtr res);
+        bool startFreedriveModeCallback(const ur_rtde_controller::srv::StartFreedriveMode::Request::SharedPtr req, ur_rtde_controller::srv::StartFreedriveMode::Response::SharedPtr res);
+        bool stopFreedriveModeCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
+        bool zeroFTSensorCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
+        bool getForwardKinematicCallback(const ur_rtde_controller::srv::GetForwardKinematic::Request::SharedPtr req, ur_rtde_controller::srv::GetForwardKinematic::Response::SharedPtr res);
+        bool getInverseKinematicCallback(const ur_rtde_controller::srv::GetInverseKinematic::Request::SharedPtr req, ur_rtde_controller::srv::GetInverseKinematic::Response::SharedPtr res);
+        bool getSafetyStatusCallback(const ur_rtde_controller::srv::GetRobotStatus::Request::SharedPtr req, ur_rtde_controller::srv::GetRobotStatus::Response::SharedPtr res);
+        bool RobotiQGripperCallback(const ur_rtde_controller::srv::RobotiQGripperControl::Request::SharedPtr req, ur_rtde_controller::srv::RobotiQGripperControl::Response::SharedPtr res);
+        bool enableRobotiQGripperCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
+        bool disableRobotiQGripperCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
 
-    // ---- MOVEMENT FUNCTIONS ---- //
-    void moveTrajectory();
-    void checkAsyncMovements();
-    void stopRobot();
+        // Movement Functions
+        void moveTrajectory();
+        void checkAsyncMovements();
+        void stopRobot();
 
-    // ---- UTILITIES FUNCTIONS ---- //
-    void resetBooleans();
-    void publishTrajectoryExecuted();
-    void checkRobotStatus();
-    std::vector<double> Pose2RTDE(geometry_msgs::msg::Pose pose);
-    geometry_msgs::msg::Pose RTDE2Pose(std::vector<double> rtde_pose);
+        // Utilities Functions
+        void resetBooleans();
+        void publishTrajectoryExecuted();
+        void checkRobotStatus();
+        std::vector<double> Pose2RTDE(geometry_msgs::msg::Pose pose);
+        geometry_msgs::msg::Pose RTDE2Pose(std::vector<double> rtde_pose);
 
-    // ---- EIGEN FUNCTIONS ---- //
-    Eigen::Matrix<double, 4, 4> pose2eigen(geometry_msgs::msg::Pose pose);
-    Eigen::VectorXd computePoseError(Eigen::Matrix<double, 4, 4> T_des, Eigen::Matrix<double, 4, 4> T);
-    bool isPoseReached(Eigen::VectorXd position_error, double movement_precision);
-    bool isJointReached();
+        // Eigen Functions
+        Eigen::Matrix<double, 4, 4> pose2eigen(geometry_msgs::msg::Pose pose);
+        Eigen::VectorXd computePoseError(Eigen::Matrix<double, 4, 4> T_des, Eigen::Matrix<double, 4, 4> T);
+        bool isPoseReached(Eigen::VectorXd position_error, double movement_precision);
+        bool isJointReached();
 
 };
 
