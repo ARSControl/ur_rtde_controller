@@ -74,7 +74,7 @@ class UR10e_RTDE_Move():
 
             # Destination Position (if `time_from_start` = 0 -> read velocity[0])
             pos = JointTrajectoryPoint()
-            pos.time_from_start = rospy.Duration(sec=0, nanosec=0)
+            pos.time_from_start = rospy.Duration(secs=0, nsecs=0)
             pos.velocities = [0.4]
             pos.positions = joint_positions
 
