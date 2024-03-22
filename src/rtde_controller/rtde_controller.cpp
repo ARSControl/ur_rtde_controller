@@ -13,40 +13,78 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
     if(!nh_.param<bool>("/ur_rtde_controller/enable_gripper", enable_gripper_, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper_);}
     if(!nh_.param<bool>("/ur_rtde_controller/asynchronous", asynchronous_, "False")) {ROS_ERROR_STREAM("Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
     if(!nh_.param<bool>("/ur_rtde_controller/limit_acc", limit_acc_, "False")) {ROS_ERROR_STREAM("Failed To Get \"limit_acc\" Param. Using Default: " << limit_acc_);}
+    if(!nh_.param<bool>("/ur_rtde_controller/ft_sensor", ft_sensor_, "True")) {ROS_ERROR_STREAM("Failed To Get \"ft_sensor\" Param. Using Default: " << ft_sensor_);}
 
-    // Initialize Dashboard
-    rtde_dashboard_ = new ur_rtde::DashboardClient(ROBOT_IP);
+    // Initialize Robot
+    while (ros::ok() && !robot_initialized) {
 
-    // Check Remote Control Status
-    rtde_dashboard_ -> connect();
-    while (!rtde_dashboard_ -> isInRemoteControl()) {ROS_ERROR_THROTTLE(5, "ERROR: Robot Not in RemoteControl Mode\n");}
+        // Initialize Dashboard
+        if (!rtde_dashboard_initialized) {try {rtde_dashboard_ = new ur_rtde::DashboardClient(ROBOT_IP); rtde_dashboard_initialized = true;}
+        catch (const std::exception &e) {ROS_ERROR_STREAM("Failed to Initialize the Dashboard Client:\n" << e.what());}}
 
-    // RTDE Library
-    rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP);
-    rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ROBOT_IP);
-    rtde_io_      = new ur_rtde::RTDEIOInterface(ROBOT_IP);
+        // Check Remote Control Status
+        if (rtde_dashboard_initialized && !rtde_dashboard_connected) {try {rtde_dashboard_ -> connect(); rtde_dashboard_connected = true;
+        while (!rtde_dashboard_ -> isInRemoteControl()) {ROS_ERROR_THROTTLE(5, "ERROR: Robot Not in RemoteControl Mode\n");}}
+        catch (const std::exception &e) {ROS_ERROR_STREAM("Failed to Connect to the Dashboard Server:\n" << e.what());}}
 
-    // Reupload RTDE Control Script if Needed
-    if (!rtde_dashboard_ -> running()) rtde_control_ -> reuploadScript();
-    rtde_dashboard_ -> disconnect();
+        // RTDE Control Library
+        if (rtde_dashboard_connected && !rtde_control_initialized) try {rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP); rtde_control_initialized = true;}
+        catch (const std::exception &e) {ROS_ERROR_STREAM("Failed to Initialize the RTDE Control Interface:\n" << e.what());}
+
+        // RTDE Receive Library
+        if (rtde_dashboard_connected && !rtde_receive_initialized) try {rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ROBOT_IP); rtde_receive_initialized = true;}
+        catch (const std::exception &e) {ROS_ERROR_STREAM("Failed to Initialize the RTDE Receive Interface:\n" << e.what());}
+
+        // RTDE IO Library
+        if (rtde_dashboard_connected && !rtde_io_initialized) try {rtde_io_ = new ur_rtde::RTDEIOInterface(ROBOT_IP); rtde_io_initialized = true;}
+        catch (const std::exception &e) {ROS_ERROR_STREAM("Failed to Initialize the RTDE IO Interface:\n" << e.what());}
+
+        // Reupload RTDE Control Script if Needed
+        if (rtde_dashboard_initialized && !rtde_dashboard_ -> running()) try {rtde_control_ -> reuploadScript(); rtde_dashboard_ -> disconnect();}
+        catch (const std::exception &e) {ROS_ERROR_STREAM("Failed to Reupload the RTDE Control Script:\n" << e.what());}
+
+        // Robot Initialized
+        if (rtde_dashboard_initialized && rtde_dashboard_connected && rtde_control_initialized && rtde_receive_initialized && rtde_io_initialized) robot_initialized = true;
+
+    }
 
     // RobotiQ Gripper
     if (enable_gripper_) {
 
-        // Initialize Gripper
-        robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, false);
-        robotiq_gripper_ -> connect();
-        robotiq_gripper_ -> activate();
+        try {
 
-        // Gripper Service Server
-        robotiq_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/command", &RTDEController::RobotiQGripperCallback, this);
+            // Initialize Gripper
+            robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, false);
+            robotiq_gripper_ -> connect();
+            robotiq_gripper_ -> activate();
+
+            // Gripper Service Server
+            robotiq_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/command", &RTDEController::RobotiQGripperCallback, this);
+
+            // Gripper Enable/Disable Service Servers
+            enable_gripper_server_  = nh_.advertiseService("/ur_rtde/robotiq_gripper/enable",  &RTDEController::enableRobotiQGripperCallback, this);
+            disable_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/disable", &RTDEController::disableRobotiQGripperCallback, this);
+
+        } catch(const std::exception& e) {std::cerr << "Error: " << e.what() << std::endl; RCLCPP_ERROR(get_logger(), "Failed to Start the RobotiQ 2F Gripper");}
+
+    }
+
+    if (ft_sensor_) {
+
+        // Zero FT Sensor
+        rtde_control_ -> zeroFtSensor();
+
+        // FT Sensor Publisher
+        ft_sensor_pub_ = nh_.advertise<geometry_msgs::Wrench> ("/ur_rtde/ft_sensor", 1);
+
+        // Zero FT Sensor Service Server
+        zeroFT_sensor_server_ = nh_.advertiseService("/ur_rtde/zeroFTSensor", &RTDEController::zeroFTSensorCallback, this);
 
     }
 
     // ROS - Publishers
     joint_state_pub_         = nh_.advertise<sensor_msgs::JointState> ("/joint_states", 1);
     tcp_pose_pub_            = nh_.advertise<geometry_msgs::Pose>     ("/ur_rtde/cartesian_pose", 1);
-    ft_sensor_pub_           = nh_.advertise<geometry_msgs::Wrench>   ("/ur_rtde/ft_sensor", 1);
     trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>          ("/ur_rtde/trajectory_executed", 1);
 
     // ROS - Subscribers
@@ -61,12 +99,9 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
     set_async_parameter_server_ = nh_.advertiseService("/ur_rtde/param/set_asynchronous",  &RTDEController::setAsyncParameterCallback, this);
     start_FreedriveMode_server_ = nh_.advertiseService("/ur_rtde/FreedriveMode/start",     &RTDEController::startFreedriveModeCallback, this);
     stop_FreedriveMode_server_  = nh_.advertiseService("/ur_rtde/FreedriveMode/stop",      &RTDEController::stopFreedriveModeCallback, this);
-    zeroFT_sensor_server_       = nh_.advertiseService("/ur_rtde/zeroFTSensor",            &RTDEController::zeroFTSensorCallback, this);
     get_FK_server_              = nh_.advertiseService("/ur_rtde/getFK",                   &RTDEController::getForwardKinematicCallback, this);
     get_IK_server_              = nh_.advertiseService("/ur_rtde/getIK",                   &RTDEController::getInverseKinematicCallback, this);
     get_safety_status_server_   = nh_.advertiseService("/ur_rtde/getSafetyStatus",         &RTDEController::getSafetyStatusCallback, this);
-    enable_gripper_server_      = nh_.advertiseService("/ur_rtde/robotiq_gripper/enable",  &RTDEController::enableRobotiQGripperCallback, this);
-    disable_gripper_server_     = nh_.advertiseService("/ur_rtde/robotiq_gripper/disable", &RTDEController::disableRobotiQGripperCallback, this);
 
     ros::Duration(1).sleep();
     std::cout << std::endl;
@@ -505,6 +540,10 @@ void RTDEController::publishTCPPose()
 
 void RTDEController::publishFTSensor()
 {
+
+    // Return if the FT Sensor is Disabled
+    if (!ft_sensor_) return;
+
     while (ros::ok() && !shutdown_)
     {
         // Read FT Sensor Forces
