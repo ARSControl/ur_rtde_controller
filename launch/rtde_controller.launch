@@ -5,6 +5,7 @@
     <arg name="enable_gripper" default="True"/>
     <arg name="asynchronous"   default="False"/>
     <arg name="limit_acc"      default="True"/>
+    <arg name="ft_sensor"      default="True"/>
 
     <!-- RTDE - Position Controller -->
     <node pkg="ur_rtde_controller" type="rtde_controller" name="ur_rtde_controller" output="screen">
@@ -12,6 +13,7 @@
         <param name="enable_gripper" value="$(arg enable_gripper)"/>
         <param name="asynchronous"   value="$(arg asynchronous)"/>
         <param name="limit_acc"      value="$(arg limit_acc)"/>
+        <param name="ft_sensor"      value="$(arg ft_sensor)"/>
     </node>
 
 </launch>

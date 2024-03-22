@@ -3,9 +3,9 @@
 int32 GRIPPER_OPENED = 100
 int32 GRIPPER_CLOSED = 0
 
-float64 position
-float64 speed
-float64 force
+int32 position
+int32 speed
+int32 force
 
 ---
 

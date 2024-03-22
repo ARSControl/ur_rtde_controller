@@ -7,10 +7,12 @@ find_package(Eigen3 REQUIRED)
 find_package(ur_rtde REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
-	roscpp
-	message_generation
+  roscpp
+  rospy
+  message_generation
 
   std_msgs
+  sensor_msgs
   geometry_msgs
   trajectory_msgs
   std_srvs
@@ -47,8 +49,8 @@ catkin_package(
 )
 
 include_directories(
-	include
-	${catkin_INCLUDE_DIRS}
+  include
+  ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
 )
 
