@@ -2,11 +2,9 @@
 
 import rclpy
 from rclpy.node import Node
-from builtin_interfaces.msg import Duration
-from typing import List
 
-import roboticstoolbox as rtb, numpy as np
-from roboticstoolbox.tools.types import ArrayLike, NDArray
+from typing import List
+from builtin_interfaces.msg import Duration
 
 from std_msgs.msg import Bool
 from geometry_msgs.msg import Pose
@@ -26,14 +24,10 @@ class UR_RTDE_Move(Node):
     trajectory_execution_received = False
     trajectory_executed = False
 
-    def __init__(self, node_name='ur_rtde_move', robot_model='ur10e'):
+    def __init__(self, node_name='ur_rtde_move'):
 
         # Initialize ROS node
         super().__init__(node_name, enable_rosout=False)
-
-        # Create Robot - Robotic Toolbox
-        self.robot = rtb.models.UR10() if robot_model.lower() in ['ur10','ur10e'] else rtb.models.UR5() if robot_model.lower() in ['ur5','ur5e'] else None
-        if self.robot is None: raise Exception(f"Robot Model {robot_model} not supported")
 
         # Publishers
         self.ur10Pub      = self.create_publisher(JointState, '/desired_joint_pose', 1)
@@ -52,7 +46,7 @@ class UR_RTDE_Move(Node):
         self.get_IK_client = self.create_client(GetInverseKinematic, 'ur_rtde/getIK')
 
         # Stop Robot Service
-        self.stop_service_client = self.create_client(Trigger, '/ur_rtde/controllers/stop_robot')
+        self.stop_robot_client = self.create_client(Trigger, '/ur_rtde/controllers/stop_robot')
 
     def trajectoryExecutionCallback(self, msg:Bool):
 
@@ -133,6 +127,8 @@ class UR_RTDE_Move(Node):
 
     def FK(self, joint_positions:List[float]) -> Pose:
 
+        """ Forward Kinematics Using UR_RTDE Drivers """
+
         # Set Forward Kinematic Request
         req = GetForwardKinematic.Request()
         req.joint_position = joint_positions
@@ -148,6 +144,8 @@ class UR_RTDE_Move(Node):
         return res.tcp_position
 
     def IK(self, pose:Pose, near_pose:List[float]=None) -> List[float]:
+
+        """ Inverse Kinematics Using UR_RTDE Drivers """
 
         # Set Inverse Kinematic Request
         req = GetInverseKinematic.Request()
@@ -166,31 +164,7 @@ class UR_RTDE_Move(Node):
 
         return list(res.joint_position)
 
-    def Jacobian(self, joint_positions:ArrayLike) -> np.ndarray:
-
-        """ Get Jacobian Matrix """
-
-        return self.robot.jacob0(joint_positions)
-
-    def JacobianDot(self, joint_positions:ArrayLike, joint_velocities:ArrayLike) -> np.ndarray:
-
-        """ Get Jacobian Derivative Matrix """
-
-        return self.robot.jacob0_dot(joint_positions, joint_velocities)
-
-    def JacobianInverse(self, joint_positions:ArrayLike) -> np.ndarray:
-
-        """ Get Jacobian Inverse Matrix """
-
-        return np.linalg.inv(self.robot.jacob0(joint_positions))
-
-    def getMaxJointVelocity(self) -> np.ndarray:
-
-        """ Get Max Joint Velocity """
-
-        return self.robot.qlim
-
-    def move_gripper(self, position, speed=100, force=100,gripper_enabled=True) -> bool:
+    def move_gripper(self, position, speed=100, force=100, gripper_enabled=True) -> bool:
 
         """ Open-Close Gripper Function """
 
@@ -214,11 +188,10 @@ class UR_RTDE_Move(Node):
     def stop_robot(self) -> bool:
 
         # Wait For Service
-        self.stop_service_client.wait_for_service('/ur_rtde/controllers/stop_robot')
+        self.stop_robot_client.wait_for_service('/ur_rtde/controllers/stop_robot')
 
         # Call Stop Service - Asynchronous
-        req = Trigger.Request()
-        future = self.stop_service_client.call_async(req)
+        future = self.stop_robot_client.call_async(Trigger.Request())
         rclpy.spin_until_future_complete(self, future)
         res:Trigger.Response = future.result()
 
