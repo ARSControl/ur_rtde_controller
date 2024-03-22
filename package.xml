@@ -3,7 +3,7 @@
 
   <name>ur_rtde_controller</name>
   <version>0.0.0</version>
-  <description>The ur_rtde_controller package</description>
+  <description>UR RTDE Controller Package</description>
 
   <!-- Author tags are optional, multiple are allowed, one per tag -->
   <author email="davide.ferrari95@unimore.it">Davide</author>
@@ -16,14 +16,23 @@
   <!-- RTDE Libraries -->
   <url type="website">https://sdurobotics.gitlab.io/ur_rtde/index.html</url>
 
-  <license>TODO</license>
+  <license>BSD-3</license>
 
   <!-- Build Dependancies -->
   <buildtool_depend>catkin</buildtool_depend>
 
+  <!-- ROS Dependancies -->
   <depend>roscpp</depend>
   <depend>rospy</depend>
 
+  <!-- Message Dependancies -->
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>trajectory_msgs</depend>
+  <depend>std_srvs</depend>
+
+  <!-- Custom Message Creation Dependancies -->
   <build_depend>message_generation</build_depend>
   <exec_depend>message_runtime</exec_depend>
 
