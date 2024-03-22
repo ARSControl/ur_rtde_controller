@@ -11,6 +11,7 @@ def create_example_node():
         'enable_gripper': LaunchConfiguration('enable_gripper'),
         'asynchronous':   LaunchConfiguration('asynchronous'),
         'limit_acc':      LaunchConfiguration('limit_acc'),
+        'ft_sensor':      LaunchConfiguration('ft_sensor'),
     }
 
     # Python Node + Parameters + YAML Config File
@@ -32,12 +33,14 @@ def generate_launch_description():
     enable_gripper_arg = DeclareLaunchArgument('enable_gripper', default_value='true')
     asynchronous_arg   = DeclareLaunchArgument('asynchronous',   default_value='false')
     limit_acc_arg      = DeclareLaunchArgument('limit_acc',      default_value='true')
+    ft_sensor_arg      = DeclareLaunchArgument('ft_sensor',      default_value='true')
 
     # Launch Description - Add Arguments
     launch_description.add_action(ROBOT_IP_arg)
     launch_description.add_action(enable_gripper_arg)
     launch_description.add_action(asynchronous_arg)
     launch_description.add_action(limit_acc_arg)
+    launch_description.add_action(ft_sensor_arg)
 
     # Launch Description - Add Nodes
     launch_description.add_action(create_example_node())

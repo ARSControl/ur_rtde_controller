@@ -17,12 +17,14 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     declare_parameter<bool>("enable_gripper", false);
     declare_parameter<bool>("asynchronous", false);
     declare_parameter<bool>("limit_acc", false);
+    declare_parameter<bool>("ft_sensor", true);
 
     // Load Parameters
     if(!get_parameter_or("ROBOT_IP", ROBOT_IP, std::string("192.168.2.30"))) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
     if(!get_parameter_or("enable_gripper", enable_gripper_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper_);}
     if(!get_parameter_or("asynchronous", asynchronous_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
     if(!get_parameter_or("limit_acc", limit_acc_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"limit_acc\" Param. Using Default: " << limit_acc_);}
+    if(!get_parameter_or("ft_sensor", ft_sensor_, true)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"ft_sensor\" Param. Using Default: " << ft_sensor_);}
 
     // Initialize Robot
     while (rclcpp::ok() && !robot_initialized) {
@@ -70,14 +72,31 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
             // Gripper Service Server
             robotiq_gripper_server_ = create_service<ur_rtde_controller::srv::RobotiQGripperControl>("/ur_rtde/robotiq_gripper/command", std::bind(&RTDEController::RobotiQGripperCallback, this, std::placeholders::_1, std::placeholders::_2));
 
+            // Gripper Enable/Disable Service Servers
+            enable_gripper_server_  = create_service<std_srvs::srv::Trigger>("/ur_rtde/robotiq_gripper/enable", std::bind(&RTDEController::enableRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2));
+            disable_gripper_server_ = create_service<std_srvs::srv::Trigger>("/ur_rtde/robotiq_gripper/disable", std::bind(&RTDEController::disableRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2));
+
+
         } catch(const std::exception& e) {std::cerr << "Error: " << e.what() << std::endl; RCLCPP_ERROR(get_logger(), "Failed to Start the RobotiQ 2F Gripper");}
+
+    }
+
+    if (ft_sensor_) {
+
+        // Zero FT Sensor
+        rtde_control_ -> zeroFtSensor();
+
+        // FT Sensor Publisher
+        ft_sensor_pub_ = create_publisher<geometry_msgs::msg::Wrench>("/ur_rtde/ft_sensor", 1);
+
+        // Zero FT Sensor Service Server
+        zeroFT_sensor_server_ = create_service<std_srvs::srv::Trigger>("/ur_rtde/zeroFTSensor", std::bind(&RTDEController::zeroFTSensorCallback, this,std::placeholders::_1, std::placeholders::_2));
 
     }
 
     // ROS - Publishers
     joint_state_pub_         = create_publisher<sensor_msgs::msg::JointState>("/joint_states", 1);
     tcp_pose_pub_            = create_publisher<geometry_msgs::msg::Pose>("/ur_rtde/cartesian_pose", 1);
-    ft_sensor_pub_           = create_publisher<geometry_msgs::msg::Wrench>("/ur_rtde/ft_sensor", 1);
     trajectory_executed_pub_ = create_publisher<std_msgs::msg::Bool>("/ur_rtde/trajectory_executed", 1);
 
     // ROS - Subscribers
@@ -92,12 +111,9 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     set_async_parameter_server_ = create_service<std_srvs::srv::SetBool>("/ur_rtde/param/set_asynchronous", std::bind(&RTDEController::setAsyncParameterCallback, this,std::placeholders::_1, std::placeholders::_2));
     start_FreedriveMode_server_ = create_service<ur_rtde_controller::srv::StartFreedriveMode>("/ur_rtde/FreedriveMode/start", std::bind(&RTDEController::startFreedriveModeCallback, this,std::placeholders::_1, std::placeholders::_2));
     stop_FreedriveMode_server_  = create_service<std_srvs::srv::Trigger>("/ur_rtde/FreedriveMode/stop", std::bind(&RTDEController::stopFreedriveModeCallback, this,std::placeholders::_1, std::placeholders::_2));
-    zeroFT_sensor_server_       = create_service<std_srvs::srv::Trigger>("/ur_rtde/zeroFTSensor", std::bind(&RTDEController::zeroFTSensorCallback, this,std::placeholders::_1, std::placeholders::_2));
     get_FK_server_              = create_service<ur_rtde_controller::srv::GetForwardKinematic>("/ur_rtde/getFK", std::bind(&RTDEController::getForwardKinematicCallback, this,std::placeholders::_1, std::placeholders::_2));
     get_IK_server_              = create_service<ur_rtde_controller::srv::GetInverseKinematic>("/ur_rtde/getIK", std::bind(&RTDEController::getInverseKinematicCallback, this,std::placeholders::_1, std::placeholders::_2));
     get_safety_status_server_   = create_service<ur_rtde_controller::srv::GetRobotStatus>("/ur_rtde/getSafetyStatus", std::bind(&RTDEController::getSafetyStatusCallback, this,std::placeholders::_1, std::placeholders::_2));
-    enable_gripper_server_      = create_service<std_srvs::srv::Trigger>("/ur_rtde/robotiq_gripper/enable", std::bind(&RTDEController::enableRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2));
-    disable_gripper_server_     = create_service<std_srvs::srv::Trigger>("/ur_rtde/robotiq_gripper/disable", std::bind(&RTDEController::disableRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2));
 
     rclcpp::sleep_for(std::chrono::seconds(1));
     std::cout << std::endl;
@@ -108,7 +124,7 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
 RTDEController::~RTDEController()
 {
     // Stop Robot
-    // stopRobot();
+    stopRobot();
 
     // Disconnect RTDE Control Interface
     rtde_control_ -> disconnect();

@@ -89,6 +89,7 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         bool enable_gripper_;
         bool asynchronous_;
         bool limit_acc_;
+        bool ft_sensor_;
 
         // Initialization Variables
         bool rtde_dashboard_initialized = false;
