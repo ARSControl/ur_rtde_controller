@@ -33,20 +33,20 @@ class UR10e_RTDE_Move():
         self.cartesianPub = rospy.Publisher('/ur_rtde/controllers/cartesian_space_controller/command', CartesianPoint, queue_size=1)
 
         # Subscribers
-        self.trajectory_execution_sub = rospy.Subscriber('/trajectory_execution', Bool, self.trajectory_execution_callback)
+        if DYNAMIC_PLANNER: self.trajectory_execution_sub = rospy.Subscriber('/trajectory_execution', Bool, self.trajectoryExecutionCallback, queue_size=1)
+        else: self.trajectory_execution_sub = rospy.Subscriber('/ur_rtde/trajectory_executed', Bool, self.trajectoryExecutionCallback, queue_size=1)
 
         # Init Gripper Service
-        self.gripper_srv = rospy.ServiceProxy('/ur_rtde/robotiq_gripper/command', RobotiQGripperControl)
+        self.gripper_client = rospy.ServiceProxy('/ur_rtde/robotiq_gripper/command', RobotiQGripperControl)
 
         # IK, FK Services
-        self.get_FK_srv = rospy.ServiceProxy('ur_rtde/getFK', GetForwardKinematic)
-        self.get_IK_srv = rospy.ServiceProxy('ur_rtde/getIK', GetInverseKinematic)
+        self.get_FK_client = rospy.ServiceProxy('ur_rtde/getFK', GetForwardKinematic)
+        self.get_IK_client = rospy.ServiceProxy('ur_rtde/getIK', GetInverseKinematic)
 
         # Stop Robot Service
-        self.stop_service = rospy.ServiceProxy('/ur_rtde/controllers/stop_robot', Trigger)
-        self.stop_req = TriggerRequest()
+        self.stop_robot_client = rospy.ServiceProxy('/ur_rtde/controllers/stop_robot', Trigger)
 
-    def trajectory_execution_callback(self, msg:Bool):
+    def trajectoryExecutionCallback(self, msg:Bool):
 
         """ Trajectory Execution Callback """
 
@@ -74,7 +74,7 @@ class UR10e_RTDE_Move():
 
             # Destination Position (if `time_from_start` = 0 -> read velocity[0])
             pos = JointTrajectoryPoint()
-            pos.time_from_start = rospy.Duration(0)
+            pos.time_from_start = rospy.Duration(sec=0, nanosec=0)
             pos.velocities = [0.4]
             pos.positions = joint_positions
 
@@ -131,7 +131,7 @@ class UR10e_RTDE_Move():
 
         # Call Forward Kinematic
         rospy.wait_for_service('ur_rtde/getFK')
-        res: GetForwardKinematicResponse = self.get_FK_srv(req)
+        res: GetForwardKinematicResponse = self.get_FK_client(req)
 
         return res.tcp_position
 
@@ -146,11 +146,11 @@ class UR10e_RTDE_Move():
 
         # Call Inverse Kinematic
         rospy.wait_for_service('ur_rtde/getIK')
-        res: GetInverseKinematicResponse = self.get_IK_srv(req)
+        res: GetInverseKinematicResponse = self.get_IK_client(req)
 
         return list(res.joint_position)
 
-    def move_gripper(self, position, gripper_enabled=True) -> bool:
+    def move_gripper(self, position, speed=100, force=100, gripper_enabled=True) -> bool:
 
         """ Open-Close Gripper Function """
 
@@ -159,17 +159,19 @@ class UR10e_RTDE_Move():
 
         # Set Gripper Request
         req = RobotiQGripperControlRequest()
-        req.position, req.speed, req.force = position, 100, 100
+        req.position, req.speed, req.force = position, speed, force
 
         # Call Gripper Service
         rospy.wait_for_service('/ur_rtde/robotiq_gripper/command')
-        res = self.gripper_srv(req)
+        res = self.gripper_client(req)
 
         return True
 
     def stopRobot(self) -> bool:
 
+        # Wait For Service
         rospy.wait_for_service('/ur_rtde/controllers/stop_robot')
-        self.stop_req = TriggerRequest()
-        self.stop_response = self.stop_service(self.stop_req)
+
+        # Call Stop Robot Service
+        self.stop_response = self.stop_robot_client(TriggerRequest())
         return True
