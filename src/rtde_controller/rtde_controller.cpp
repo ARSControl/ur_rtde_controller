@@ -563,6 +563,10 @@ void RTDEController::publishTCPPose()
 
 void RTDEController::publishFTSensor()
 {
+
+    // Return if the FT Sensor is Disabled
+    if (!ft_sensor_) return;
+
     while (rclcpp::ok() && !shutdown_)
     {
         // Read FT Sensor Forces
