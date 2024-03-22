@@ -22,6 +22,10 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
         sudo apt-get update
         sudo apt install librtde librtde-dev
 
+- Install Python Requirements:
+
+        pip install -r ../path/to/this/repo/requirements.txt
+
 - Build your workspace
 
         cd ~/colcon_ws
