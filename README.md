@@ -33,6 +33,13 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 
 ## Build New Robot Kinematic Libraries
 
+The Kinematics Libraries are already available for the following robots:
+
+- CB3 Series (UR3, UR5, UR10)
+- e-Series (UR3e, UR5e, UR10e, UR16e)
+
+If you want to add a new robot, follow these steps:
+
 - Install `invoke`:
 
         pip install invoke
