@@ -33,6 +33,13 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 
 ## Build New Robot Kinematic Libraries
 
+The Kinematics Libraries are already available for the following robots:
+
+- CB3 Series (UR3, UR5, UR10)
+- e-Series (UR3e, UR5e, UR10e, UR16e)
+
+If you want to add a new robot, follow these steps:
+
 - Install `invoke`:
 
         pip install invoke
@@ -61,5 +68,5 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 - To use the RobotiQ Gripper remember to Activate it from the TP `UR+` Interface
 
 - Launch RTDE Controller
-  
+
         ros2 launch ur_rtde_controller rtde_controller_launch.py ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false
