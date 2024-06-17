@@ -13,7 +13,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
     if(!nh_.param<bool>("/ur_rtde_controller/enable_gripper", enable_gripper_, "False")) {ROS_ERROR_STREAM("Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper_);}
     if(!nh_.param<bool>("/ur_rtde_controller/asynchronous", asynchronous_, "False")) {ROS_ERROR_STREAM("Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
     if(!nh_.param<bool>("/ur_rtde_controller/limit_acc", limit_acc_, "False")) {ROS_ERROR_STREAM("Failed To Get \"limit_acc\" Param. Using Default: " << limit_acc_);}
-    if(!nh_.param<bool>("/ur_rtde_controller/ft_sensor", ft_sensor_, "True")) {ROS_ERROR_STREAM("Failed To Get \"ft_sensor\" Param. Using Default: " << ft_sensor_);}
+    if(!nh_.param<bool>("/ur_rtde_controller/ft_sensor", ft_sensor_, "False")) {ROS_ERROR_STREAM("Failed To Get \"ft_sensor\" Param. Using Default: " << ft_sensor_);}
 
     // Initialize Robot
     while (ros::ok() && !robot_initialized) {
@@ -23,8 +23,7 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate): nh_(nh)
         catch (const std::exception &e) {ROS_ERROR_STREAM("Failed to Initialize the Dashboard Client:\n" << e.what());}}
 
         // Check Remote Control Status
-        if (rtde_dashboard_initialized && !rtde_dashboard_connected) {try {rtde_dashboard_ -> connect(); rtde_dashboard_connected = true;
-        while (!rtde_dashboard_ -> isInRemoteControl()) {ROS_ERROR_THROTTLE(5, "ERROR: Robot Not in RemoteControl Mode\n");}}
+        if (rtde_dashboard_initialized && !rtde_dashboard_connected) {try {rtde_dashboard_ -> connect(); rtde_dashboard_connected = true;}
         catch (const std::exception &e) {ROS_ERROR_STREAM("Failed to Connect to the Dashboard Server:\n" << e.what());}}
 
         // RTDE Control Library

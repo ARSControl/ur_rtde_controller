@@ -68,5 +68,5 @@ If you want to add a new robot, follow these steps:
 - To use the RobotiQ Gripper remember to Activate it from the TP `UR+` Interface
 
 - Launch RTDE Controller
-  
+
         roslaunch ur_rtde_controller rtde_controller.launch ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false
