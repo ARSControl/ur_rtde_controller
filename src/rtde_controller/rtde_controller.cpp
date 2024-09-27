@@ -180,12 +180,13 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate) : nh_(nh
     trajectory_executed_pub_ = nh_.advertise<std_msgs::Bool>("/ur_rtde/trajectory_executed", 1);
 
     // ROS - Subscribers
-    trajectory_command_sub_ = nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command", 1, &RTDEController::jointTrajectoryCallback, this);
-    joint_goal_command_sub_ = nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command", 1, &RTDEController::jointGoalCallback, this);
-    cartesian_goal_command_sub_ = nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command", 1, &RTDEController::cartesianGoalCallback, this);
-    joint_velocity_command_sub_ = nh_.subscribe("/ur_rtde/controllers/joint_velocity_controller/command", 1, &RTDEController::jointVelocityCallback, this);
-    cartesian_velocity_command_sub_ = nh_.subscribe("/ur_rtde/controllers/cartesian_velocity_controller/command", 1, &RTDEController::cartesianVelocityCallback, this);
-
+    trajectory_command_sub_         = nh_.subscribe("/ur_rtde/controllers/trajectory_controller/command",           1, &RTDEController::jointTrajectoryCallback,    this);
+    joint_goal_command_sub_         = nh_.subscribe("/ur_rtde/controllers/joint_space_controller/command",          1, &RTDEController::jointGoalCallback,          this);
+    cartesian_goal_command_sub_     = nh_.subscribe("/ur_rtde/controllers/cartesian_space_controller/command",      1, &RTDEController::cartesianGoalCallback,      this);
+    joint_velocity_command_sub_     = nh_.subscribe("/ur_rtde/controllers/joint_velocity_controller/command",       1, &RTDEController::jointVelocityCallback,      this);
+    cartesian_velocity_command_sub_ = nh_.subscribe("/ur_rtde/controllers/cartesian_velocity_controller/command",   1, &RTDEController::cartesianVelocityCallback,  this);
+    digital_io_set_sub_				= nh_.subscribe("/ur_rtde/digitalIO/command",                                   1, &RTDEController::digitalIOSetCallback,       this);
+    
     // ROS - Service Servers
     stop_robot_server_ = nh_.advertiseService("/ur_rtde/controllers/stop_robot", &RTDEController::stopRobotCallback, this);
     set_async_parameter_server_ = nh_.advertiseService("/ur_rtde/param/set_asynchronous", &RTDEController::setAsyncParameterCallback, this);
@@ -438,6 +439,19 @@ void RTDEController::cartesianVelocityCallback(const geometry_msgs::Twist msg)
 
     // Cartesian Velocity Publisher
     rtde_control_->speedL(desired_cartesian_velocity, acceleration, 0.002);
+}
+
+void RTDEController::digitalIOSetCallback(const std_msgs::Int8 msg)
+{
+	// Function to set a boolean value in a digital port of the UR IO network
+	// output boolean = sign(msg)
+	// output id	  = abs(msg)
+
+	uint8_t output_id = abs(msg.data);
+	bool signal_level = false;
+	if (msg.data > 0) {signal_level = true;} 
+
+	rtde_io_ -> setStandardDigitalOut(output_id,signal_level);
 }
 
 bool RTDEController::stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)

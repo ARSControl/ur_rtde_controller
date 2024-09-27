@@ -19,6 +19,7 @@
 #include <geometry_msgs/Twist.h>
 #include <std_msgs/Float64MultiArray.h>
 #include <std_msgs/Bool.h>
+#include <std_msgs/Int8.h>
 
 #include <std_srvs/Trigger.h>
 #include <std_srvs/SetBool.h>
@@ -133,11 +134,14 @@ class RTDEController {
         ros::Subscriber cartesian_goal_command_sub_;
         ros::Subscriber joint_velocity_command_sub_;
         ros::Subscriber cartesian_velocity_command_sub_;
+        ros::Subscriber digital_io_set_sub_;
+
         void jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg);
         void jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg);
         void cartesianGoalCallback(const ur_rtde_controller::CartesianPoint msg);
         void jointVelocityCallback(const std_msgs::Float64MultiArray msg);
         void cartesianVelocityCallback(const geometry_msgs::Twist msg);
+		void digitalIOSetCallback(const std_msgs::Int8 msg);
 
     	// ROS Service Servers and Callbacks
         ros::ServiceServer stop_robot_server_;
