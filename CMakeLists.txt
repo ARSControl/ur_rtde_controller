@@ -3,6 +3,9 @@ project(ur_rtde_controller)
 
 add_compile_options(-std=c++17)
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+
 find_package(Eigen3 REQUIRED)
 find_package(ur_rtde REQUIRED)
 
