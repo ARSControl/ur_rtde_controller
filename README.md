@@ -69,4 +69,4 @@ If you want to add a new robot, follow these steps:
 
 - Launch RTDE Controller
 
-        ros2 launch ur_rtde_controller rtde_controller_launch.py ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false
+        ros2 launch ur_rtde_controller rtde_controller.launch.py ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false
