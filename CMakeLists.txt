@@ -30,6 +30,7 @@ add_service_files(
   GetInverseKinematic.srv
   StartFreedriveMode.srv
   GetRobotStatus.srv
+  GetGripperPosition.srv
 )
 
 generate_messages(

@@ -153,6 +153,9 @@ RTDEController::RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate) : nh_(nh
             // Gripper Enable/Disable Service Servers
             enable_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/enable", &RTDEController::enableRobotiQGripperCallback, this);
             disable_gripper_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/disable", &RTDEController::disableRobotiQGripperCallback, this);
+
+            // Gripper Utilities Server
+            gripper_current_position_server_ = nh_.advertiseService("/ur_rtde/robotiq_gripper/current_position", &RTDEController::currentPositionRobotiQGripperCallback, this);
         }
         catch (const std::exception &e)
         {
@@ -681,6 +684,15 @@ bool RTDEController::disableRobotiQGripperCallback(std_srvs::Trigger::Request &r
     // Shutdown the Gripper Service Server if Exist
     if (robotiq_gripper_server_ != nullptr)
         robotiq_gripper_server_.shutdown();
+
+    return res.success;
+}
+
+bool RTDEController::currentPositionRobotiQGripperCallback(ur_rtde_controller::GetGripperPosition::Request &req, ur_rtde_controller::GetGripperPosition::Response &res)
+{
+    // Get Current RobotiQ Gripper Position
+    res.current_position = robotiq_gripper_->getCurrentPosition();
+    res.success = true;
 
     return res.success;
 }

@@ -30,6 +30,7 @@
 #include "ur_rtde_controller/GetInverseKinematic.h"
 #include "ur_rtde_controller/StartFreedriveMode.h"
 #include "ur_rtde_controller/GetRobotStatus.h"
+#include "ur_rtde_controller/GetGripperPosition.h"
 
 #include <Eigen/Dense>
 
@@ -155,6 +156,7 @@ class RTDEController {
         ros::ServiceServer robotiq_gripper_server_;
         ros::ServiceServer enable_gripper_server_;
         ros::ServiceServer disable_gripper_server_;
+        ros::ServiceServer gripper_current_position_server_;
         bool stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
         bool setAsyncParameterCallback(std_srvs::SetBoolRequest &req, std_srvs::SetBoolResponse &res);
         bool startFreedriveModeCallback(ur_rtde_controller::StartFreedriveMode::Request  &req, ur_rtde_controller::StartFreedriveMode::Response &res);
@@ -166,6 +168,7 @@ class RTDEController {
         bool RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request  &req, ur_rtde_controller::RobotiQGripperControl::Response &res);
         bool enableRobotiQGripperCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
         bool disableRobotiQGripperCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
+        bool currentPositionRobotiQGripperCallback(ur_rtde_controller::GetGripperPosition::Request &req, ur_rtde_controller::GetGripperPosition::Response &res);
 
         // Movement Functions
         void moveTrajectory();
