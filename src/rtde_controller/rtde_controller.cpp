@@ -76,6 +76,8 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
             enable_gripper_server_  = create_service<std_srvs::srv::Trigger>("/ur_rtde/robotiq_gripper/enable", std::bind(&RTDEController::enableRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2));
             disable_gripper_server_ = create_service<std_srvs::srv::Trigger>("/ur_rtde/robotiq_gripper/disable", std::bind(&RTDEController::disableRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2));
 
+			// Gripper Current Position Service Server
+			gripper_current_position_server_ = create_service<ur_rtde_controller::srv::GetGripperPosition>("/ur_rtde/robotiq_gripper/current_position", std::bind(&RTDEController::currentPositionRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2));
 
         } catch(const std::exception& e) {std::cerr << "Error: " << e.what() << std::endl; RCLCPP_ERROR(get_logger(), "Failed to Start the RobotiQ 2F Gripper");}
 
@@ -112,6 +114,7 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     set_async_parameter_server_ = create_service<std_srvs::srv::SetBool>("/ur_rtde/param/set_asynchronous", std::bind(&RTDEController::setAsyncParameterCallback, this,std::placeholders::_1, std::placeholders::_2));
     start_FreedriveMode_server_ = create_service<ur_rtde_controller::srv::StartFreedriveMode>("/ur_rtde/FreedriveMode/start", std::bind(&RTDEController::startFreedriveModeCallback, this,std::placeholders::_1, std::placeholders::_2));
     stop_FreedriveMode_server_  = create_service<std_srvs::srv::Trigger>("/ur_rtde/FreedriveMode/stop", std::bind(&RTDEController::stopFreedriveModeCallback, this,std::placeholders::_1, std::placeholders::_2));
+	zeroFT_sensor_server_ 		= create_service<std_srvs::srv::Trigger>("/ur_rtde/zeroFTSensor", std::bind(&RTDEController::zeroFTSensorCallback, this,std::placeholders::_1, std::placeholders::_2));
     get_FK_server_              = create_service<ur_rtde_controller::srv::GetForwardKinematic>("/ur_rtde/getFK", std::bind(&RTDEController::getForwardKinematicCallback, this,std::placeholders::_1, std::placeholders::_2));
     get_IK_server_              = create_service<ur_rtde_controller::srv::GetInverseKinematic>("/ur_rtde/getIK", std::bind(&RTDEController::getInverseKinematicCallback, this,std::placeholders::_1, std::placeholders::_2));
     get_safety_status_server_   = create_service<ur_rtde_controller::srv::GetRobotStatus>("/ur_rtde/getSafetyStatus", std::bind(&RTDEController::getSafetyStatusCallback, this,std::placeholders::_1, std::placeholders::_2));
@@ -529,7 +532,17 @@ bool RTDEController::disableRobotiQGripperCallback(const std::shared_ptr<std_srv
     // Shutdown the Gripper Service Server if Exist
     if (robotiq_gripper_server_ != nullptr) robotiq_gripper_server_ = nullptr;
 
+	response->success = true;
     return true;
+}
+
+bool RTDEController::currentPositionRobotiQGripperCallback(const std::shared_ptr<ur_rtde_controller::srv::GetGripperPosition::Request> request, std::shared_ptr<ur_rtde_controller::srv::GetGripperPosition::Response> response)
+{
+	// Get Current RobotiQ Gripper Position
+	response->current_position = robotiq_gripper_ -> getCurrentPosition();
+
+	response->success = true;
+	return true;
 }
 
 void RTDEController::publishJointState()

@@ -50,6 +50,7 @@ set(srv_files
   "srv/GetInverseKinematic.srv"
   "srv/StartFreedriveMode.srv"
   "srv/GetRobotStatus.srv"
+  "srv/GetGripperPosition.srv"
 )
 
 # Generate Messages, Services and Actions

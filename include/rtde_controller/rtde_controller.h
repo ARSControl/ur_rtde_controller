@@ -30,6 +30,7 @@
 #include "ur_rtde_controller/srv/get_inverse_kinematic.hpp"
 #include "ur_rtde_controller/srv/start_freedrive_mode.hpp"
 #include "ur_rtde_controller/srv/get_robot_status.hpp"
+#include "ur_rtde_controller/srv/get_gripper_position.hpp"
 
 #include <Eigen/Dense>
 
@@ -154,6 +155,7 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         rclcpp::Service<ur_rtde_controller::srv::RobotiQGripperControl>::SharedPtr robotiq_gripper_server_;
         rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr enable_gripper_server_;
         rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr disable_gripper_server_;
+        rclcpp::Service<ur_rtde_controller::srv::GetGripperPosition>::SharedPtr gripper_current_position_server_;
         bool stopRobotCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
         bool setAsyncParameterCallback(const std_srvs::srv::SetBool::Request::SharedPtr req, std_srvs::srv::SetBool::Response::SharedPtr res);
         bool startFreedriveModeCallback(const ur_rtde_controller::srv::StartFreedriveMode::Request::SharedPtr req, ur_rtde_controller::srv::StartFreedriveMode::Response::SharedPtr res);
@@ -165,6 +167,7 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         bool RobotiQGripperCallback(const ur_rtde_controller::srv::RobotiQGripperControl::Request::SharedPtr req, ur_rtde_controller::srv::RobotiQGripperControl::Response::SharedPtr res);
         bool enableRobotiQGripperCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
         bool disableRobotiQGripperCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
+        bool currentPositionRobotiQGripperCallback(const ur_rtde_controller::srv::GetGripperPosition::Request::SharedPtr req, ur_rtde_controller::srv::GetGripperPosition::Response::SharedPtr res);
 
         // Movement Functions
         void moveTrajectory();
