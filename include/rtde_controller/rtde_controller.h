@@ -19,6 +19,7 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/int8.hpp>
 
 #include <std_srvs/srv/trigger.hpp>
 #include <std_srvs/srv/set_bool.hpp>
@@ -133,11 +134,13 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         rclcpp::Subscription<ur_rtde_controller::msg::CartesianPoint>::SharedPtr cartesian_goal_command_sub_;
         rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr joint_velocity_command_sub_;
         rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cartesian_velocity_command_sub_;
+        rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr digital_io_set_sub_;
         void jointTrajectoryCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
         void jointGoalCallback(const trajectory_msgs::msg::JointTrajectoryPoint::SharedPtr msg);
         void cartesianGoalCallback(const ur_rtde_controller::msg::CartesianPoint::SharedPtr msg);
         void jointVelocityCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
         void cartesianVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
+        void digitalIOSetCallback(const std_msgs::msg::Int8::SharedPtr msg);
 
         // ROS2 Service Servers and Callbacks
         rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr stop_robot_server_;
