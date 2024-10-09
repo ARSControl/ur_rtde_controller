@@ -471,9 +471,9 @@ bool RTDEController::getSafetyStatusCallback(const std::shared_ptr<ur_rtde_contr
 bool RTDEController::RobotiQGripperCallback(const std::shared_ptr<ur_rtde_controller::srv::RobotiQGripperControl::Request> request, std::shared_ptr<ur_rtde_controller::srv::RobotiQGripperControl::Response> response)
 {
     // Normalize Received Values
-    float position = request->position / 100;
-    float speed    = request->speed / 100;
-    float force    = request->force / 100;
+    float position = double(request->position) / 100.0;
+    float speed    = double(request->speed) / 100.0;
+    float force    = double(request->force) / 100.0;
 
     // Move Gripper - Normalized Values (0.0 - 1.0)
     try {response->status = robotiq_gripper_ -> move(position, speed, force, ur_rtde::RobotiqGripper::WAIT_FINISHED);}
