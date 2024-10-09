@@ -614,9 +614,9 @@ bool RTDEController::getSafetyStatusCallback(ur_rtde_controller::GetRobotStatus:
 bool RTDEController::RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request &req, ur_rtde_controller::RobotiQGripperControl::Response &res)
 {
     // Normalize Received Values
-    float position = req.position / 100;
-    float speed = req.speed / 100;
-    float force = req.force / 100;
+    float position = double(req.position) / 100.0;
+    float speed = double(req.speed) / 100.0;
+    float force = double(req.force) / 100.0;
 
     // Move Gripper - Normalized Values (0.0 - 1.0)
     try
