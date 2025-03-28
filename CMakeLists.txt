@@ -73,13 +73,24 @@ include_directories(
   ${${PROJECT_NAME}_INCLUDE_DIRS}
 )
 
-add_library(polyfit_lib src/polyfit/polyfit.cpp)
+add_library(polyfit_lib SHARED src/polyfit/polyfit.cpp)
+ament_export_targets(polyfit_lib)
+
+install(
+    TARGETS polyfit_lib
+    EXPORT polyfit_lib
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+    INCLUDES DESTINATION include
+)
+ament_export_dependencies(rosidl_default_runtime)
 
 # RTDE Controller - C++ Executables
 add_executable(rtde_controller src/rtde_controller/rtde_controller.cpp)
 ament_target_dependencies(rtde_controller rclcpp std_msgs sensor_msgs geometry_msgs trajectory_msgs std_srvs)
-rosidl_target_interfaces(rtde_controller ${PROJECT_NAME} "rosidl_typesupport_cpp")
-target_link_libraries(rtde_controller ur_rtde::rtde polyfit_lib)
+rosidl_get_typesupport_target(rtde_controller ${PROJECT_NAME} rosidl_typesupport_cpp)
+target_link_libraries(rtde_controller ${PROJECT_NAME}__rosidl_typesupport_cpp "${cpp_typesupport_target}" ur_rtde::rtde polyfit_lib)
 
 # Install C++ Executables
 install(TARGETS

@@ -5,7 +5,7 @@ https://sdurobotics.gitlab.io/ur_rtde/api/api.html
 
 ## Dependencies
 
-- ROS2 Foxy
+- ROS2 Humble
 - Eigen3
 - ur_rtde
 
