@@ -78,7 +78,7 @@ bool PolyFit::computePolynomials(const trajectory &traj)
 			{
 				polynomials_[k].n = n;
 				polynomials_[k].coefficients.resize(n + 1);
-				for (uint i = 0; i < n + 1; i++)
+				for (int i = 0; i < n + 1; i++)
 					polynomials_[k].coefficients[i] = x(i, 0);
 				polynomials_[k].final_time = traj.points.back().time;
 			}
@@ -109,7 +109,7 @@ double PolyFit::evaluatePolynomial(const polynomial &p, const double &t)
 {
 	double eval_time = std::min(p.final_time, t);
 	double eval_pol = p.coefficients.back();
-	for (uint i = 0; i < p.n; i++)
+	for (int i = 0; i < p.n; i++)
 		eval_pol += p.coefficients[i] * std::pow(eval_time, p.n - i);
 	return eval_pol;
 }
@@ -126,7 +126,7 @@ double PolyFit::evaluatePolynomialDer(const polynomial &p, const double &t)
 {
 	double eval_time = std::min(p.final_time, t);
 	double deval_pol = * (p.coefficients.end() - 2);
-	for (uint i = 0; i < p.n; i++)
+	for (int i = 0; i < p.n; i++)
 		deval_pol += (p.n - i) * p.coefficients[i] * std::pow(eval_time, p.n - i - 1);
 	return deval_pol;
 }
@@ -143,7 +143,7 @@ double PolyFit::evaluatePolynomialDDer(const polynomial &p, const double &t)
 {
 	double eval_time = std::min(p.final_time, t);
 	double ddeval_pol = * (p.coefficients.end() - 3);
-	for (uint i = 0; i < p.n - 2; i++)
+	for (int i = 0; i < p.n - 2; i++)
 		ddeval_pol += (p.n - i - 1) * (p.n - i) * p.coefficients[i] * std::pow(eval_time, p.n - i - 2);
 	return ddeval_pol;
 }

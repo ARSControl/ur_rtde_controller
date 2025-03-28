@@ -536,7 +536,9 @@ bool RTDEController::disableRobotiQGripperCallback(const std::shared_ptr<std_srv
     return true;
 }
 
-bool RTDEController::currentPositionRobotiQGripperCallback(const std::shared_ptr<ur_rtde_controller::srv::GetGripperPosition::Request> request, std::shared_ptr<ur_rtde_controller::srv::GetGripperPosition::Response> response)
+bool RTDEController::currentPositionRobotiQGripperCallback(
+    [[maybe_unused]] const std::shared_ptr<ur_rtde_controller::srv::GetGripperPosition::Request> request,
+                           std::shared_ptr<ur_rtde_controller::srv::GetGripperPosition::Response> response)
 {
 	// Get Current RobotiQ Gripper Position
 	response->current_position = robotiq_gripper_ -> getCurrentPosition();
