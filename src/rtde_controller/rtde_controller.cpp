@@ -108,6 +108,7 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     joint_velocity_command_sub_     = create_subscription<std_msgs::msg::Float64MultiArray>("/ur_rtde/controllers/joint_velocity_controller/command", 1, std::bind(&RTDEController::jointVelocityCallback, this, std::placeholders::_1));
     cartesian_velocity_command_sub_ = create_subscription<geometry_msgs::msg::Twist>("/ur_rtde/controllers/cartesian_velocity_controller/command", 1, std::bind(&RTDEController::cartesianVelocityCallback, this, std::placeholders::_1));
 	digital_io_set_sub_				= create_subscription<std_msgs::msg::Int8>("/ur_rtde/digitalIO/command", 1, std::bind(&RTDEController::digitalIOSetCallback, this, std::placeholders::_1));
+    tool_digital_io_set_sub_		= create_subscription<std_msgs::msg::Int8>("/ur_rtde/tool_digitalIO/command", 1, std::bind(&RTDEController::toolDigitalIOSetCallback, this, std::placeholders::_1));
 
     // ROS - Service Servers
     stop_robot_server_          = create_service<std_srvs::srv::Trigger>("/ur_rtde/controllers/stop_robot", std::bind(&RTDEController::stopRobotCallback, this,std::placeholders::_1, std::placeholders::_2));
@@ -308,12 +309,25 @@ void RTDEController::cartesianVelocityCallback(const geometry_msgs::msg::Twist::
 void RTDEController::digitalIOSetCallback(const std_msgs::msg::Int8::SharedPtr msg)
 {
 	// Function to set a boolean value in a digital port of the UR IO network
+    //NOTE: As 0 id wouldn't be able to specify the value, ids are shifted by 1
 	// output boolean = sign(msg)
-	// output id	  = abs(msg)
-	uint8_t output_id = abs(msg->data);
+	// output id	  = abs(msg) -1 
+	uint8_t output_id = abs(msg->data) - 1;
 	bool signal_level = false;
 	if (msg->data > 0) {signal_level = true;}
 	rtde_io_ -> setStandardDigitalOut(output_id,signal_level);
+}
+
+void RTDEController::toolDigitalIOSetCallback(const std_msgs::msg::Int8::SharedPtr msg)
+{
+    // Function to set a boolean value in a digital port of the UR IO network
+    //NOTE: As 0 id wouldn't be able to specify the value, ids are shifted by 1
+    // output boolean = sign(msg)
+    // output id	  = abs(msg) - 1
+    uint8_t output_id = abs(msg->data) - 1;
+    bool signal_level = false;
+    if (msg->data >= 0) {signal_level = true;}
+    rtde_io_ -> setToolDigitalOut(output_id, signal_level);
 }
 
 bool RTDEController::stopRobotCallback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response)
