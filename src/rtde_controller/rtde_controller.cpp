@@ -340,6 +340,9 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::JointTrajectoryPoi
         return;
     }
 
+
+    rtde_control_->speedStop();
+
     // Move to Joint Goal
     rtde_control_->moveJ(msg.positions, velocity, acceleration, asynchronous_);
 
@@ -371,6 +374,7 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::CartesianPo
         return;
     }
 
+    rtde_control_->speedStop();
     // Move to Linear Goal
     rtde_control_->moveL(desired_pose, msg.velocity, 1.20, asynchronous_);
 
