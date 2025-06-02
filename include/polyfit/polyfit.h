@@ -5,7 +5,9 @@
 #include <iostream>
 #include <vector>
 
-#include <Eigen/Dense>
+#include <eigen3/Eigen/Dense>
+#include <eigen3/Eigen/Core>
+#include <eigen3/Eigen/Geometry>
 
 class PolyFit
 {
