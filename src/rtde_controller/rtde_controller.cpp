@@ -101,7 +101,7 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     tcp_pose_pub_            = create_publisher<geometry_msgs::msg::Pose>("/ur_rtde/cartesian_pose", 1);
     trajectory_executed_pub_ = create_publisher<std_msgs::msg::Bool>("/ur_rtde/trajectory_executed", 1);
 
-    // ROS - Subscribers
+    // ROS - Subscribers -> TODO: ADD CALLBACK GROUPS
     trajectory_command_sub_         = create_subscription<trajectory_msgs::msg::JointTrajectory>("/ur_rtde/controllers/trajectory_controller/command", 1, std::bind(&RTDEController::jointTrajectoryCallback, this, std::placeholders::_1));
     joint_goal_command_sub_         = create_subscription<trajectory_msgs::msg::JointTrajectoryPoint>("/ur_rtde/controllers/joint_space_controller/command", 1, std::bind(&RTDEController::jointGoalCallback, this, std::placeholders::_1));
     cartesian_goal_command_sub_     = create_subscription<ur_rtde_controller::msg::CartesianPoint>("/ur_rtde/controllers/cartesian_space_controller/command", 1, std::bind(&RTDEController::cartesianGoalCallback, this, std::placeholders::_1));
@@ -123,7 +123,6 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     rclcpp::sleep_for(std::chrono::seconds(1));
     std::cout << std::endl;
     RCLCPP_WARN(get_logger(), "UR RTDE Controller - Connected\n");
-
 }
 
 RTDEController::~RTDEController()
