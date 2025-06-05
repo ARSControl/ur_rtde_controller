@@ -78,6 +78,7 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         void publishJointState();
         void publishTCPPose();
         void publishFTSensor();
+        void checkRobot();
         bool shutdown_ = false;
 
         // ROS2 Rate
@@ -102,6 +103,7 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         bool robot_initialized = false;
 
         // Global Variables
+        sensor_msgs::msg::JointState joint_state_;
         std::vector<double> actual_joint_position_;
         std::vector<double> actual_joint_velocity_;
         geometry_msgs::msg::Pose actual_cartesian_pose_;
@@ -128,6 +130,13 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr tcp_pose_pub_;
         rclcpp::Publisher<geometry_msgs::msg::Wrench>::SharedPtr ft_sensor_pub_;
         rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr trajectory_executed_pub_;
+
+        // ROS2 Timer
+        rclcpp::TimerBase::SharedPtr checkRobot_timer_;
+        rclcpp::TimerBase::SharedPtr tcpPose_timer_;
+        rclcpp::TimerBase::SharedPtr force_timer_;
+        rclcpp::TimerBase::SharedPtr jointState_timer_;
+        rclcpp::executors::MultiThreadedExecutor executor;
 
         // ROS2 Subscribers and Callbacks
         rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr trajectory_command_sub_;

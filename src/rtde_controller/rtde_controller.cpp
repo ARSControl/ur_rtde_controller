@@ -97,18 +97,55 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     }
 
     // ROS - Publishers
+    joint_state_.name = {"shoulder_pan_joint","shoulder_lift_joint","elbow_joint","wrist_1_joint","wrist_2_joint","wrist_3_joint"};
+    joint_state_.position.resize(6, 0.0);
+    joint_state_.velocity.resize(6, 0.0);
+
     joint_state_pub_         = create_publisher<sensor_msgs::msg::JointState>("/joint_states", 1);
     tcp_pose_pub_            = create_publisher<geometry_msgs::msg::Pose>("/ur_rtde/cartesian_pose", 1);
     trajectory_executed_pub_ = create_publisher<std_msgs::msg::Bool>("/ur_rtde/trajectory_executed", 1);
 
     // ROS - Subscribers -> TODO: ADD CALLBACK GROUPS
-    trajectory_command_sub_         = create_subscription<trajectory_msgs::msg::JointTrajectory>("/ur_rtde/controllers/trajectory_controller/command", 1, std::bind(&RTDEController::jointTrajectoryCallback, this, std::placeholders::_1));
-    joint_goal_command_sub_         = create_subscription<trajectory_msgs::msg::JointTrajectoryPoint>("/ur_rtde/controllers/joint_space_controller/command", 1, std::bind(&RTDEController::jointGoalCallback, this, std::placeholders::_1));
-    cartesian_goal_command_sub_     = create_subscription<ur_rtde_controller::msg::CartesianPoint>("/ur_rtde/controllers/cartesian_space_controller/command", 1, std::bind(&RTDEController::cartesianGoalCallback, this, std::placeholders::_1));
-    joint_velocity_command_sub_     = create_subscription<std_msgs::msg::Float64MultiArray>("/ur_rtde/controllers/joint_velocity_controller/command", 1, std::bind(&RTDEController::jointVelocityCallback, this, std::placeholders::_1));
-    cartesian_velocity_command_sub_ = create_subscription<geometry_msgs::msg::Twist>("/ur_rtde/controllers/cartesian_velocity_controller/command", 1, std::bind(&RTDEController::cartesianVelocityCallback, this, std::placeholders::_1));
-	digital_io_set_sub_				= create_subscription<std_msgs::msg::Int8>("/ur_rtde/digitalIO/command", 1, std::bind(&RTDEController::digitalIOSetCallback, this, std::placeholders::_1));
-    tool_digital_io_set_sub_		= create_subscription<std_msgs::msg::Int8>("/ur_rtde/tool_digitalIO/command", 1, std::bind(&RTDEController::toolDigitalIOSetCallback, this, std::placeholders::_1));
+    auto cb_group_sub1 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    rclcpp::SubscriptionOptions sub_options; sub_options.callback_group = cb_group_sub1;
+    trajectory_command_sub_ = create_subscription<trajectory_msgs::msg::JointTrajectory>("/ur_rtde/controllers/trajectory_controller/command",
+                                1, std::bind(&RTDEController::jointTrajectoryCallback, this, std::placeholders::_1),sub_options);
+
+
+    auto cb_group_sub2 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    sub_options.callback_group = cb_group_sub2;    
+    joint_goal_command_sub_ = create_subscription<trajectory_msgs::msg::JointTrajectoryPoint>("/ur_rtde/controllers/joint_space_controller/command",
+                                1, std::bind(&RTDEController::jointGoalCallback, this, std::placeholders::_1),sub_options);
+    
+    
+    auto cb_group_sub3 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    sub_options.callback_group = cb_group_sub3;
+    cartesian_goal_command_sub_ = create_subscription<ur_rtde_controller::msg::CartesianPoint>("/ur_rtde/controllers/cartesian_space_controller/command",
+                                    1, std::bind(&RTDEController::cartesianGoalCallback, this, std::placeholders::_1),sub_options);
+    
+
+    auto cb_group_sub4 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    sub_options.callback_group = cb_group_sub4;
+    joint_velocity_command_sub_ = create_subscription<std_msgs::msg::Float64MultiArray>("/ur_rtde/controllers/joint_velocity_controller/command",
+                                    1, std::bind(&RTDEController::jointVelocityCallback, this, std::placeholders::_1),sub_options);
+    
+    
+    auto cb_group_sub5 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    sub_options.callback_group = cb_group_sub5;
+    cartesian_velocity_command_sub_ = create_subscription<geometry_msgs::msg::Twist>("/ur_rtde/controllers/cartesian_velocity_controller/command",
+                                        1, std::bind(&RTDEController::cartesianVelocityCallback, this, std::placeholders::_1),sub_options);
+	
+    
+    auto cb_group_sub6 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    sub_options.callback_group = cb_group_sub6;
+    digital_io_set_sub_	= create_subscription<std_msgs::msg::Int8>("/ur_rtde/digitalIO/command", 1,
+                            std::bind(&RTDEController::digitalIOSetCallback, this, std::placeholders::_1),sub_options);
+    
+    
+    auto cb_group_sub7 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    sub_options.callback_group = cb_group_sub7;
+    tool_digital_io_set_sub_ = create_subscription<std_msgs::msg::Int8>("/ur_rtde/tool_digitalIO/command", 1,
+                                std::bind(&RTDEController::toolDigitalIOSetCallback, this, std::placeholders::_1),sub_options);
 
     // ROS - Service Servers
     stop_robot_server_          = create_service<std_srvs::srv::Trigger>("/ur_rtde/controllers/stop_robot", std::bind(&RTDEController::stopRobotCallback, this,std::placeholders::_1, std::placeholders::_2));
@@ -259,23 +296,25 @@ void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArra
     if (msg->data.size() != 6) {RCLCPP_ERROR(get_logger(), "ERROR: Received Joint Velocity Size != 6\n"); return;}
 
     // Get Current and Desired Joint Velocity
-    std::vector<double> current_velocity = rtde_receive_ -> getActualQd();
     std::vector<double> desired_velocity = msg->data;
+    std::vector<double> current_velocity = actual_joint_velocity_;
 
-    // Compute Velocity Difference
+    // // Compute Velocity Difference
     Eigen::VectorXd velocity_difference = Eigen::VectorXd::Map(desired_velocity.data(), desired_velocity.size()) 
                                         - Eigen::VectorXd::Map(current_velocity.data(), current_velocity.size());
 
     // Compute MAX Acceleration
     double acceleration = velocity_difference.array().abs().maxCoeff() / ros_rate_;
     acceleration = sign(acceleration) * std::max(std::fabs(acceleration), 1.0);
-    acceleration = 10.0;
+
+    // Set Acceleration to a Fixed (Maximum) Value
+    // double acceleration = 10.0; 
 
     // Check Acceleration Limits
     if (limit_acc_ && acceleration > JOINT_ACCELERATION_MAX) {RCLCPP_ERROR(get_logger(), "Requested Acceleration > Maximum Acceleration\n"); return;}
 
     // Joint Velocity Publisher
-    rtde_control_ -> speedJ(desired_velocity, acceleration, 0.002);
+    rtde_control_ -> speedJ(desired_velocity, acceleration,0.0001);
 }
 
 void RTDEController::cartesianVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
@@ -562,72 +601,48 @@ bool RTDEController::currentPositionRobotiQGripperCallback(
 
 void RTDEController::publishJointState()
 {
-    while (rclcpp::ok() && !shutdown_)
-    {
-        // Create JointState Message
-        sensor_msgs::msg::JointState joint_state;
-        joint_state.name = {"shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"};
-        joint_state.header.stamp = now();
+    // Create JointState Message
+    joint_state_.header.stamp = now();
 
-        // Read Joint Position and Velocity
-        joint_state.position = rtde_receive_ -> getActualQ();
-        joint_state.velocity = rtde_receive_ -> getActualQd();
+    // Read Joint Position and Velocity
+    joint_state_.position = rtde_receive_ -> getActualQ();
+    joint_state_.velocity = rtde_receive_ -> getActualQd();
 
-        // Publish JointState
-        joint_state_pub_ -> publish(joint_state);
+    actual_joint_position_ = joint_state_.position;
+    actual_joint_velocity_ = joint_state_.velocity;
 
-        // Sleep to ROS Rate
-        ros_rate.sleep();
-
-    }
+    // Publish JointState
+    joint_state_pub_ -> publish(joint_state_);
 }
 
 void RTDEController::publishTCPPose()
 {
-    while (rclcpp::ok() && !shutdown_)
-    {
-        // Read TCP Position
-        std::vector<double> tcp_pose = rtde_receive_ -> getActualTCPPose();
+    // Read TCP Position
+    actual_cartesian_pose_ = RTDE2Pose(rtde_receive_ -> getActualTCPPose());
 
-        // Convert RTDE Pose to Geometry Pose
-        geometry_msgs::msg::Pose pose = RTDE2Pose(tcp_pose);
-
-        // Publish TCP Pose
-        tcp_pose_pub_ -> publish(pose);
-
-        // Sleep to ROS Rate
-        ros_rate.sleep();
-
-    }
+    // Publish TCP Pose
+    tcp_pose_pub_ -> publish(actual_cartesian_pose_);
 }
 
 void RTDEController::publishFTSensor()
 {
-
     // Return if the FT Sensor is Disabled
     if (!ft_sensor_) return;
 
-    while (rclcpp::ok() && !shutdown_)
-    {
-        // Read FT Sensor Forces
-        std::vector<double> tcp_forces = rtde_receive_ -> getActualTCPForce();
+    // Read FT Sensor Forces
+    std::vector<double> tcp_forces = rtde_receive_ -> getActualTCPForce();
 
-        // Create Wrench Message
-        geometry_msgs::msg::Wrench forces;
-        forces.force.x = tcp_forces[0];
-        forces.force.y = tcp_forces[1];
-        forces.force.z = tcp_forces[2];
-        forces.torque.x = tcp_forces[3];
-        forces.torque.y = tcp_forces[4];
-        forces.torque.z = tcp_forces[5];
+    // Create Wrench Message
+    geometry_msgs::msg::Wrench forces;
+    forces.force.x = tcp_forces[0];
+    forces.force.y = tcp_forces[1];
+    forces.force.z = tcp_forces[2];
+    forces.torque.x = tcp_forces[3];
+    forces.torque.y = tcp_forces[4];
+    forces.torque.z = tcp_forces[5];
 
-        // Publish FTSensor Forces
-        ft_sensor_pub_ -> publish(forces);
-
-        // Sleep to ROS Rate
-        ros_rate.sleep();
-
-    }
+    // Publish FTSensor Forces
+    ft_sensor_pub_ -> publish(forces);
 }
 
 void RTDEController::resetBooleans()
@@ -843,51 +858,66 @@ void RTDEController::checkRobotStatus()
     if (!rtde_control_ -> isConnected()) RCLCPP_ERROR(get_logger(), "ROBOT DISCONNECTED\n");
 }
 
-void RTDEController::spinner()
+void RTDEController::checkRobot()
 {
-    // Callback Readings
-    rclcpp::spin_some(this->get_node_base_interface());
-
     // Check UR Status
     checkRobotStatus();
-
-    // Update Actual Joint and TCP Positions
-    actual_joint_position_ = rtde_receive_ -> getActualQ();
-    actual_joint_velocity_ = rtde_receive_ -> getActualQd();
-    actual_cartesian_pose_ = RTDE2Pose(rtde_receive_ -> getActualTCPPose());
 
     // Trajectory Controller
     moveTrajectory();
 
     // Check Async Movements Status
     checkAsyncMovements();
+}
 
-    // Sleep to ROS Rate
-    ros_rate.sleep();
+void RTDEController::spinner()
+{
+    // Main Spinner
+    executor.add_node(this->get_node_base_interface());
 
+    // Add timers
+    auto cb_group_timer1 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    jointState_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./ros_rate_)), std::bind(&RTDEController::publishJointState, this), cb_group_timer1);
+
+    auto cb_group_timer2 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    tcpPose_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./ros_rate_)), std::bind(&RTDEController::publishTCPPose, this), cb_group_timer2);
+
+    auto cb_group_timer3 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    force_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./ros_rate_)), std::bind(&RTDEController::publishFTSensor, this), cb_group_timer3);
+
+    auto cb_group_timer4 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    checkRobot_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./ros_rate_)), std::bind(&RTDEController::checkRobot, this), cb_group_timer4);
+
+    // Spin the Executor
+    executor.spin();
+
+    // Set Shutdown Trigger
+    shutdown_ = true;
 }
 
 // Create Null-Pointers to the RTDE Class and the Threads
-RTDEController *rtde = nullptr;
-std::thread *publishJointState = nullptr;
-std::thread *publishTCPPose    = nullptr;
-std::thread *publishFTSensor   = nullptr;
+// RTDEController *rtde = nullptr;
+// std::thread *publishJointState = nullptr;
+// std::thread *publishTCPPose    = nullptr;
+// std::thread *publishFTSensor   = nullptr;
 
 void signalHandler(int signal)
 {
     std::cout << "\nKeyboard Interrupt Received\n";
 
     // Set Shutdown Trigger
-    rtde -> shutdown_ = true;
+    // rtde -> shutdown_ = true;
 
     // Join Threads on Main
-    publishJointState -> join();
-    publishTCPPose    -> join();
-    publishFTSensor   -> join();
+    // publishJointState -> join();
+    // publishTCPPose    -> join();
+    // publishFTSensor   -> join();
 
     // Call Destructor
-    delete rtde;
+    // delete rtde;
     exit(signal);
+
+    rclcpp::shutdown();
 }
 
 int main(int argc, char **argv) {
@@ -904,28 +934,32 @@ int main(int argc, char **argv) {
     std::cout << std::endl;
 
     // Create a New RTDEController
-    rtde = new RTDEController();
+    auto rtde = std::make_shared<RTDEController>();
+    // rtde = new RTDEController();
 
     // Publish JointState, TCPPose, FTSensor in separate Threads
-    publishJointState = new std::thread(&RTDEController::publishJointState, rtde);
-    publishTCPPose    = new std::thread(&RTDEController::publishTCPPose,    rtde);
-    publishFTSensor   = new std::thread(&RTDEController::publishFTSensor,   rtde);
-    rclcpp::sleep_for(std::chrono::seconds(1));
+    // publishJointState = new std::thread(&RTDEController::publishJointState, rtde);
+    // publishTCPPose    = new std::thread(&RTDEController::publishTCPPose,    rtde);
+    // publishFTSensor   = new std::thread(&RTDEController::publishFTSensor,   rtde);
+    // rclcpp::sleep_for(std::chrono::seconds(1));
 
     // Main Spinner
-    while (rclcpp::ok()) {rtde -> spinner();}
+    rtde->spinner();
 
     // Set Shutdown Trigger
-    rtde -> shutdown_ = true;
+    // rtde -> shutdown_ = true;
 
     // Join Threads on Main
-    publishJointState -> join();
-    publishTCPPose    -> join();
-    publishFTSensor   -> join();
+    // publishJointState -> join();
+    // publishTCPPose    -> join();
+    // publishFTSensor   -> join();
 
     // Call Destructor
-    delete rtde;
+    // delete rtde;
 
-return 0;
+    // Shutdown ROS
+    rclcpp::shutdown();
+
+    return 0;
 
 }
