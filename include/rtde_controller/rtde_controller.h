@@ -82,8 +82,7 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         bool shutdown_ = false;
 
         // ROS2 Rate
-        double ros_rate_ = 500.00;
-        rclcpp::Rate ros_rate = rclcpp::Rate(ros_rate_);
+        double rate_;
 
     private:
 

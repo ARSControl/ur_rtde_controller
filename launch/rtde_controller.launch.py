@@ -12,6 +12,7 @@ def create_example_node():
         'asynchronous':   LaunchConfiguration('asynchronous'),
         'limit_acc':      LaunchConfiguration('limit_acc'),
         'ft_sensor':      LaunchConfiguration('ft_sensor'),
+        'rate':           LaunchConfiguration('rate'),
     }
 
     # Python Node + Parameters + YAML Config File
@@ -29,11 +30,14 @@ def generate_launch_description():
     launch_description = LaunchDescription()
 
     # Robot Arguments
-    ROBOT_IP_arg       = DeclareLaunchArgument('ROBOT_IP',       default_value='192.168.2.40')
-    enable_gripper_arg = DeclareLaunchArgument('enable_gripper', default_value='true')
+    ROBOT_IP_arg       = DeclareLaunchArgument('ROBOT_IP',       default_value='192.168.137.102')   # UR5e DAL
+    # ROBOT_IP_arg       = DeclareLaunchArgument('ROBOT_IP',       default_value='192.168.2.40')    # UR5e ArsControl
+    # ROBOT_IP_arg       = DeclareLaunchArgument('ROBOT_IP',       default_value='192.168.2.30')    # UR10e ArsControl
+    enable_gripper_arg = DeclareLaunchArgument('enable_gripper', default_value='false')
     asynchronous_arg   = DeclareLaunchArgument('asynchronous',   default_value='false')
     limit_acc_arg      = DeclareLaunchArgument('limit_acc',      default_value='true')
     ft_sensor_arg      = DeclareLaunchArgument('ft_sensor',      default_value='true')
+    rate_arg           = DeclareLaunchArgument('rate',           default_value='500.0')
 
     # Launch Description - Add Arguments
     launch_description.add_action(ROBOT_IP_arg)
@@ -41,6 +45,7 @@ def generate_launch_description():
     launch_description.add_action(asynchronous_arg)
     launch_description.add_action(limit_acc_arg)
     launch_description.add_action(ft_sensor_arg)
+    launch_description.add_action(rate_arg)
 
     # Launch Description - Add Nodes
     launch_description.add_action(create_example_node())

@@ -18,6 +18,7 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     declare_parameter<bool>("asynchronous", false);
     declare_parameter<bool>("limit_acc", false);
     declare_parameter<bool>("ft_sensor", true);
+    declare_parameter<double>("rate", 500.0);
 
     // Load Parameters
     if(!get_parameter_or("ROBOT_IP", ROBOT_IP, std::string("192.168.2.30"))) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
@@ -25,6 +26,17 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     if(!get_parameter_or("asynchronous", asynchronous_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
     if(!get_parameter_or("limit_acc", limit_acc_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"limit_acc\" Param. Using Default: " << limit_acc_);}
     if(!get_parameter_or("ft_sensor", ft_sensor_, true)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"ft_sensor\" Param. Using Default: " << ft_sensor_);}
+    if(!get_parameter_or("rate", rate_, 500.0)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"rate\" Param. Using Default: " << rate_);}
+
+    // Log Parameters
+    std::ostringstream oss; oss << std::boolalpha;
+    oss << "PARAMETERS LIST:\nROBOT_IP:           " << ROBOT_IP << "\n";
+    oss << "Enable Gripper:     " << enable_gripper_ << "\n";
+    oss << "Asynchronous:       " << asynchronous_ << "\n";
+    oss << "Limit Acceleration: " << limit_acc_ << "\n";
+    oss << "FT Sensor:          " << ft_sensor_ << "\n";
+    oss << "Rate:               " << rate_ << " Hz";
+    RCLCPP_INFO(get_logger(), "%s", oss.str().c_str());
 
     // Initialize Robot
     while (rclcpp::ok() && !robot_initialized) {
@@ -304,17 +316,18 @@ void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArra
                                         - Eigen::VectorXd::Map(current_velocity.data(), current_velocity.size());
 
     // Compute MAX Acceleration
-    double acceleration = velocity_difference.array().abs().maxCoeff() / ros_rate_;
+    double acceleration = velocity_difference.array().abs().maxCoeff() / rate_;
     acceleration = sign(acceleration) * std::max(std::fabs(acceleration), 1.0);
 
     // Set Acceleration to a Fixed (Maximum) Value
     // double acceleration = 10.0; 
 
     // Check Acceleration Limits
-    if (limit_acc_ && acceleration > JOINT_ACCELERATION_MAX) {RCLCPP_ERROR(get_logger(), "Requested Acceleration > Maximum Acceleration\n"); return;}
+    if (limit_acc_ && acceleration > JOINT_ACCELERATION_MAX) {RCLCPP_ERROR(get_logger(), "Requested Acceleration > Maximum Acceleration\n"); 
+                                                              acceleration = JOINT_ACCELERATION_MAX;}
 
     // Joint Velocity Publisher
-    rtde_control_ -> speedJ(desired_velocity, acceleration,0.0001);
+    rtde_control_ -> speedJ(desired_velocity, acceleration,0.0001); // Use a Small Sleep Time to Avoid RTDE Control Timeout
 }
 
 void RTDEController::cartesianVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
@@ -877,16 +890,16 @@ void RTDEController::spinner()
 
     // Add timers
     auto cb_group_timer1 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    jointState_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./ros_rate_)), std::bind(&RTDEController::publishJointState, this), cb_group_timer1);
+    jointState_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishJointState, this), cb_group_timer1);
 
     auto cb_group_timer2 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    tcpPose_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./ros_rate_)), std::bind(&RTDEController::publishTCPPose, this), cb_group_timer2);
+    tcpPose_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishTCPPose, this), cb_group_timer2);
 
     auto cb_group_timer3 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    force_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./ros_rate_)), std::bind(&RTDEController::publishFTSensor, this), cb_group_timer3);
+    force_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishFTSensor, this), cb_group_timer3);
 
     auto cb_group_timer4 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    checkRobot_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./ros_rate_)), std::bind(&RTDEController::checkRobot, this), cb_group_timer4);
+    checkRobot_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::checkRobot, this), cb_group_timer4);
 
     // Spin the Executor
     executor.spin();
