@@ -20,6 +20,9 @@ def create_example_node():
         package='ur_rtde_controller', executable='rtde_controller', name='ur_rtde_controller',
         output='screen', emulate_tty=True, output_format='{line}', arguments=[('__log_level:=info')],
         parameters=[robot_parameters],
+        remappings=[
+            ('/joint_states', LaunchConfiguration('joint_state_topic'))
+        ],
     )
 
     return example_node
@@ -38,6 +41,7 @@ def generate_launch_description():
     limit_acc_arg      = DeclareLaunchArgument('limit_acc',      default_value='true')
     ft_sensor_arg      = DeclareLaunchArgument('ft_sensor',      default_value='true')
     rate_arg           = DeclareLaunchArgument('rate',           default_value='500.0')
+    joint_state_topic_arg = DeclareLaunchArgument('joint_state_topic', default_value='/joint_states')
 
     # Launch Description - Add Arguments
     launch_description.add_action(ROBOT_IP_arg)
@@ -46,6 +50,7 @@ def generate_launch_description():
     launch_description.add_action(limit_acc_arg)
     launch_description.add_action(ft_sensor_arg)
     launch_description.add_action(rate_arg)
+    launch_description.add_action(joint_state_topic_arg)
 
     # Launch Description - Add Nodes
     launch_description.add_action(create_example_node())
