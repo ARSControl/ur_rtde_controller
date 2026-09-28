@@ -1,10 +1,7 @@
 #include "rtde_controller/rtde_controller.h"
 
-int sign(double value) {
-    if (value > 0) {return 1;}
-    else if (value < 0) {return -1;}
-    else {return 0;}
-}
+#include <algorithm>
+#include <stdexcept>
 
 double durationToSec(rclcpp::Duration duration) {
     return duration.seconds();
@@ -16,17 +13,39 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     declare_parameter<std::string>("ROBOT_IP", std::string("192.168.2.30"));
     declare_parameter<bool>("enable_gripper", false);
     declare_parameter<bool>("asynchronous", false);
-    declare_parameter<bool>("limit_acc", false);
+    declare_parameter<bool>("limit_acc", true);
     declare_parameter<bool>("ft_sensor", true);
     declare_parameter<double>("rate", 500.0);
+    declare_parameter<double>("trajectory_start_tolerance", 1e-3);
+    declare_parameter<double>("trajectory_goal_tolerance", 1e-3);
+    declare_parameter<std::vector<double>>("torque_limits", {50.0, 50.0, 25.0, 10.0, 10.0, 10.0});
+    declare_parameter<int>("torque_watchdog_cycles", 5);
+    declare_parameter<bool>("torque_friction_compensation", true);
 
     // Load Parameters
+    bool asynchronous;
     if(!get_parameter_or("ROBOT_IP", ROBOT_IP, std::string("192.168.2.30"))) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
     if(!get_parameter_or("enable_gripper", enable_gripper_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"gripper_enabled\" Param. Using Default: " << enable_gripper_);}
-    if(!get_parameter_or("asynchronous", asynchronous_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous_);}
-    if(!get_parameter_or("limit_acc", limit_acc_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"limit_acc\" Param. Using Default: " << limit_acc_);}
+    if(!get_parameter_or("asynchronous", asynchronous, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"asynchronous\" Param. Using Default: " << asynchronous);}
+    if(!get_parameter_or("limit_acc", limit_acc_, true)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"limit_acc\" Param. Using Default: " << limit_acc_);}
     if(!get_parameter_or("ft_sensor", ft_sensor_, true)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"ft_sensor\" Param. Using Default: " << ft_sensor_);}
     if(!get_parameter_or("rate", rate_, 500.0)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"rate\" Param. Using Default: " << rate_);}
+    if(!get_parameter_or("trajectory_start_tolerance", trajectory_start_tolerance_, 1e-3)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"trajectory_start_tolerance\" Param. Using Default: " << trajectory_start_tolerance_);}
+    if(!get_parameter_or("trajectory_goal_tolerance", trajectory_goal_tolerance_, 1e-3)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"trajectory_goal_tolerance\" Param. Using Default: " << trajectory_goal_tolerance_);}
+    if(!get_parameter_or("torque_limits", torque_limits_, std::vector<double>{50.0, 50.0, 25.0, 10.0, 10.0, 10.0})) {RCLCPP_ERROR(get_logger(), "Failed To Get \"torque_limits\" Param. Using Default");}
+    if(!get_parameter_or("torque_watchdog_cycles", torque_watchdog_cycles_, 5)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"torque_watchdog_cycles\" Param. Using Default: " << torque_watchdog_cycles_);}
+    bool torque_friction_compensation;
+    if(!get_parameter_or("torque_friction_compensation", torque_friction_compensation, true)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"torque_friction_compensation\" Param. Using Default: " << torque_friction_compensation);}
+    asynchronous_ = asynchronous;
+    torque_friction_compensation_ = torque_friction_compensation;
+
+    // Check Torque Mode Params
+    if (torque_limits_.size() != 6 || std::any_of(torque_limits_.begin(), torque_limits_.end(), [](double limit) {return !(limit > 0.0);}))
+        throw std::invalid_argument("\"torque_limits\" Param Must Contain 6 Positive Values");
+    if (torque_watchdog_cycles_ < 0) throw std::invalid_argument("\"torque_watchdog_cycles\" Param Must be >= 0");
+
+    // Check Rate
+    if (rate_ <= 0.0) {RCLCPP_ERROR_STREAM(get_logger(), "Invalid \"rate\" Param: " << rate_ << ". Using Default: 500 Hz"); rate_ = 500.0;}
 
     // Log Parameters
     std::ostringstream oss; oss << std::boolalpha;
@@ -35,41 +54,52 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     oss << "Asynchronous:       " << asynchronous_ << "\n";
     oss << "Limit Acceleration: " << limit_acc_ << "\n";
     oss << "FT Sensor:          " << ft_sensor_ << "\n";
-    oss << "Rate:               " << rate_ << " Hz";
+    oss << "Rate:               " << rate_ << " Hz\n";
+    oss << "Torque Limits:      [" << torque_limits_[0] << ", " << torque_limits_[1] << ", " << torque_limits_[2] << ", " << torque_limits_[3] << ", " << torque_limits_[4] << ", " << torque_limits_[5] << "] Nm\n";
+    oss << "Torque Watchdog:    " << torque_watchdog_cycles_ << " Cycles\n";
+    oss << "Friction Comp.:     " << torque_friction_compensation_;
     RCLCPP_INFO(get_logger(), "%s", oss.str().c_str());
 
     // Initialize Robot
     while (rclcpp::ok() && !robot_initialized) {
 
         // Initialize Dashboard
-        if (!rtde_dashboard_initialized) {try {rtde_dashboard_ = new ur_rtde::DashboardClient(ROBOT_IP); rtde_dashboard_initialized = true;}
+        if (!rtde_dashboard_initialized) {try {rtde_dashboard_ = std::make_unique<ur_rtde::DashboardClient>(ROBOT_IP); rtde_dashboard_initialized = true;}
         catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the Dashboard Client:\n" << e.what());}}
 
         // Check Remote Control Status
         if (rtde_dashboard_initialized && !rtde_dashboard_connected) {try {rtde_dashboard_ -> connect(); rtde_dashboard_connected = true;
-        while (!rtde_dashboard_ -> isInRemoteControl()) {RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 5000, "ERROR: Robot Not in RemoteControl Mode\n");}}
+        while (rclcpp::ok() && !rtde_dashboard_ -> isInRemoteControl()) {RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 5000, "ERROR: Robot Not in RemoteControl Mode\n"); rclcpp::sleep_for(std::chrono::milliseconds(100));}}
         catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Connect to the Dashboard Server:\n" << e.what());}}
 
         // RTDE Control Library
-        if (rtde_dashboard_connected && !rtde_control_initialized) try {rtde_control_ = new ur_rtde::RTDEControlInterface(ROBOT_IP); rtde_control_initialized = true;}
+        if (rtde_dashboard_connected && !rtde_control_initialized) try {rtde_control_ = std::make_unique<ur_rtde::RTDEControlInterface>(ROBOT_IP); rtde_control_initialized = true;}
         catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the RTDE Control Interface:\n" << e.what());}
 
         // RTDE Receive Library
-        if (rtde_dashboard_connected && !rtde_receive_initialized) try {rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ROBOT_IP); rtde_receive_initialized = true;}
+        if (rtde_dashboard_connected && !rtde_receive_initialized) try {rtde_receive_ = std::make_unique<ur_rtde::RTDEReceiveInterface>(ROBOT_IP); rtde_receive_initialized = true;}
         catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the RTDE Receive Interface:\n" << e.what());}
 
         // RTDE IO Library
-        if (rtde_dashboard_connected && !rtde_io_initialized) try {rtde_io_ = new ur_rtde::RTDEIOInterface(ROBOT_IP); rtde_io_initialized = true;}
+        if (rtde_dashboard_connected && !rtde_io_initialized) try {rtde_io_ = std::make_unique<ur_rtde::RTDEIOInterface>(ROBOT_IP); rtde_io_initialized = true;}
         catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the RTDE IO Interface:\n" << e.what());}
 
         // Reupload RTDE Control Script if Needed
-        if (rtde_dashboard_initialized && !rtde_dashboard_ -> running()) try {rtde_control_ -> reuploadScript(); rtde_dashboard_ -> disconnect();}
+        if (rtde_dashboard_connected && rtde_control_initialized && !rtde_dashboard_ -> running()) try {rtde_control_ -> reuploadScript(); rtde_dashboard_ -> disconnect();}
         catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Reupload the RTDE Control Script:\n" << e.what());}
 
         // Robot Initialized
         if (rtde_dashboard_initialized && rtde_dashboard_connected && rtde_control_initialized && rtde_receive_initialized && rtde_io_initialized) robot_initialized = true;
+        else rclcpp::sleep_for(std::chrono::seconds(1));
 
     }
+
+    // Shutdown Requested Before the Robot Initialization
+    if (!robot_initialized) throw std::runtime_error("Shutdown Requested Before the Robot Initialization");
+
+    // Initialize Actual Joint State
+    actual_joint_position_ = rtde_receive_ -> getActualQ();
+    actual_joint_velocity_ = rtde_receive_ -> getActualQd();
 
     // RobotiQ Gripper
     if (enable_gripper_) {
@@ -77,7 +107,7 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
         try {
 
             // Initialize Gripper
-            robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, false);
+            robotiq_gripper_ = std::make_unique<ur_rtde::RobotiqGripper>(ROBOT_IP, 63352, false);
             robotiq_gripper_ -> connect();
             robotiq_gripper_ -> activate();
 
@@ -116,6 +146,9 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     joint_state_pub_         = create_publisher<sensor_msgs::msg::JointState>("/joint_states", 1);
     tcp_pose_pub_            = create_publisher<geometry_msgs::msg::Pose>("/ur_rtde/cartesian_pose", 1);
     trajectory_executed_pub_ = create_publisher<std_msgs::msg::Bool>("/ur_rtde/trajectory_executed", 1);
+    robot_dynamics_pub_      = create_publisher<ur_rtde_controller::msg::RobotDynamics>("/ur_rtde/dynamics", 1);
+    torque_mode_active_pub_  = create_publisher<std_msgs::msg::Bool>("/ur_rtde/torque_mode/active", rclcpp::QoS(1).transient_local());
+    publishTorqueModeActive(false);
 
     // ROS - Subscribers -> TODO: ADD CALLBACK GROUPS
     auto cb_group_sub1 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -159,15 +192,22 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     tool_digital_io_set_sub_ = create_subscription<std_msgs::msg::Int8>("/ur_rtde/tool_digitalIO/command", 1,
                                 std::bind(&RTDEController::toolDigitalIOSetCallback, this, std::placeholders::_1),sub_options);
 
+    auto cb_group_sub8 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    sub_options.callback_group = cb_group_sub8;
+    torque_command_sub_ = create_subscription<std_msgs::msg::Float64MultiArray>("/ur_rtde/controllers/torque_controller/command", 1,
+                                std::bind(&RTDEController::torqueCommandCallback, this, std::placeholders::_1),sub_options);
+
     // ROS - Service Servers
     stop_robot_server_          = create_service<std_srvs::srv::Trigger>("/ur_rtde/controllers/stop_robot", std::bind(&RTDEController::stopRobotCallback, this,std::placeholders::_1, std::placeholders::_2));
     set_async_parameter_server_ = create_service<std_srvs::srv::SetBool>("/ur_rtde/param/set_asynchronous", std::bind(&RTDEController::setAsyncParameterCallback, this,std::placeholders::_1, std::placeholders::_2));
     start_FreedriveMode_server_ = create_service<ur_rtde_controller::srv::StartFreedriveMode>("/ur_rtde/FreedriveMode/start", std::bind(&RTDEController::startFreedriveModeCallback, this,std::placeholders::_1, std::placeholders::_2));
     stop_FreedriveMode_server_  = create_service<std_srvs::srv::Trigger>("/ur_rtde/FreedriveMode/stop", std::bind(&RTDEController::stopFreedriveModeCallback, this,std::placeholders::_1, std::placeholders::_2));
-	zeroFT_sensor_server_ 		= create_service<std_srvs::srv::Trigger>("/ur_rtde/zeroFTSensor", std::bind(&RTDEController::zeroFTSensorCallback, this,std::placeholders::_1, std::placeholders::_2));
     get_FK_server_              = create_service<ur_rtde_controller::srv::GetForwardKinematic>("/ur_rtde/getFK", std::bind(&RTDEController::getForwardKinematicCallback, this,std::placeholders::_1, std::placeholders::_2));
     get_IK_server_              = create_service<ur_rtde_controller::srv::GetInverseKinematic>("/ur_rtde/getIK", std::bind(&RTDEController::getInverseKinematicCallback, this,std::placeholders::_1, std::placeholders::_2));
     get_safety_status_server_   = create_service<ur_rtde_controller::srv::GetRobotStatus>("/ur_rtde/getSafetyStatus", std::bind(&RTDEController::getSafetyStatusCallback, this,std::placeholders::_1, std::placeholders::_2));
+    start_torque_mode_server_   = create_service<std_srvs::srv::Trigger>("/ur_rtde/torque_mode/start", std::bind(&RTDEController::startTorqueModeCallback, this,std::placeholders::_1, std::placeholders::_2));
+    stop_torque_mode_server_    = create_service<std_srvs::srv::Trigger>("/ur_rtde/torque_mode/stop", std::bind(&RTDEController::stopTorqueModeCallback, this,std::placeholders::_1, std::placeholders::_2));
+    set_friction_compensation_server_ = create_service<std_srvs::srv::SetBool>("/ur_rtde/torque_mode/set_friction_compensation", std::bind(&RTDEController::setFrictionCompensationCallback, this,std::placeholders::_1, std::placeholders::_2));
 
     rclcpp::sleep_for(std::chrono::seconds(1));
     std::cout << std::endl;
@@ -180,60 +220,115 @@ RTDEController::~RTDEController()
     stopRobot();
 
     // Disconnect RTDE Control Interface
-    rtde_control_ -> disconnect();
+    if (rtde_control_) rtde_control_ -> disconnect();
     std::cout << std::endl;
     RCLCPP_WARN(get_logger(), "UR RTDE Controller - Disconnected\n");
 }
 
-// TODO: FIX Trajectory Function -> Doesn't Work with Dynamic Planner
+std::vector<double> RTDEController::getActualJointPosition()
+{
+    std::lock_guard<std::mutex> lock(joint_state_mutex_);
+    return actual_joint_position_;
+}
+
+std::vector<double> RTDEController::getActualJointVelocity()
+{
+    std::lock_guard<std::mutex> lock(joint_state_mutex_);
+    return actual_joint_velocity_;
+}
+
 void RTDEController::jointTrajectoryCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
 {
-    // Initialize Error
-    double err = 0.0;
+    // Reject if Torque Mode is Active
+    if (isTorqueModeActive("Joint Trajectory Command")) return;
 
-    // Check if the Initial Point == Actual Joint Position
-    for (uint i = 0; i < msg->points.begin()->positions.size(); i++)
-        err = std::max(std::fabs(msg->points.begin()->positions[i] - actual_joint_position_[i]), err);
+    // Joint Order: Message joint_names (if Given) -> Controller Joint Order
+    const size_t n_joints = joint_state_.name.size();
+    std::vector<size_t> joint_index(n_joints);
+    for (size_t j = 0; j < n_joints; j++) joint_index[j] = j;
 
-    // Return Error If Trajectory Starting Point != First Trajectory Point 
-    if (err > SENSOR_ERROR) {RCLCPP_ERROR(get_logger(), "Trajectory Not Starting from the Actual Configuration.\n"); return;}
-
-    // Ensure Initial and Final Point Velocity = 0
-    if ((Eigen::ArrayXd::Map(msg->points.front().velocities.data(), msg->points.front().velocities.size()) >= Eigen::ArrayXd::Constant(6, SENSOR_ERROR)).any()
-    ||  (Eigen::ArrayXd::Map(msg->points.back().velocities.data(), msg->points.back().velocities.size()) >= Eigen::ArrayXd::Constant(6, SENSOR_ERROR)).any())
-        {RCLCPP_ERROR(get_logger(), "Trajectory Starting/Final Velocity != 0\n"); return;}
-
-    // Polynomial Interpolation Object
-    PolyFit::trajectory trajectory;
-    trajectory.points.resize(msg->points.size());
-
-    // Compose Trajectory Message
-    for (uint i = 0; i < msg->points.size(); i++)
+    if (!msg->joint_names.empty())
     {
-        trajectory.points[i].position = msg->points[i].positions;
-        if (msg->points[i].velocities.size())    trajectory.points[i].velocity = msg->points[i].velocities;
-        if (msg->points[i].accelerations.size()) trajectory.points[i].acceleration = msg->points[i].accelerations;
-        // trajectory.points[i].time = msg->points[i].time_from_start;
-        trajectory.points[i].time = durationToSec(msg->points[i].time_from_start);
+        if (msg->joint_names.size() != n_joints) {RCLCPP_ERROR(get_logger(), "ERROR: Trajectory joint_names Size != %zu\n", n_joints); return;}
+
+        for (size_t j = 0; j < n_joints; j++)
+        {
+            auto it = std::find(msg->joint_names.begin(), msg->joint_names.end(), joint_state_.name[j]);
+            if (it == msg->joint_names.end()) {RCLCPP_ERROR(get_logger(), "ERROR: Joint \"%s\" Missing in the Trajectory\n", joint_state_.name[j].c_str()); return;}
+            joint_index[j] = std::distance(msg->joint_names.begin(), it);
+        }
     }
 
-    // Compute Polynomial Fitting
-    if (polynomial_fit_.computePolynomials(trajectory))
+    auto reorder = [&](const std::vector<double> &values) {
+        if (values.size() != n_joints) return values;
+        std::vector<double> ordered(n_joints);
+        for (size_t j = 0; j < n_joints; j++) ordered[j] = values[joint_index[j]];
+        return ordered;
+    };
+
+    // Convert Trajectory Message
+    std::vector<trajectory::Waypoint> waypoints;
+    for (const auto &point : msg->points)
+        waypoints.push_back({durationToSec(point.time_from_start), reorder(point.positions), reorder(point.velocities), reorder(point.accelerations)});
+
+    // Check Trajectory Consistency
+    std::string error = trajectory::validate(waypoints, n_joints);
+    if (!error.empty()) {RCLCPP_ERROR(get_logger(), "ERROR: Invalid Trajectory | %s\n", error.c_str()); return;}
+
+    // Sample the Trajectory at the Controller Rate -> Resample if Not Already Sampled at 1/rate
+    bool resampled = false;
+    trajectory::SampledTrajectory sampled = trajectory::sample(waypoints, 1.0 / rate_, &resampled);
+    if (resampled) RCLCPP_WARN(get_logger(), "Trajectory Not Sampled at %.1f ms (or Without Velocities) -> Resampled\n", 1000.0 / rate_);
+
+    // Check the Trajectory Starts from the Actual State
+    std::vector<double> actual_position = getActualJointPosition(), actual_velocity = getActualJointVelocity();
+    Eigen::VectorXd q  = Eigen::Map<Eigen::VectorXd>(actual_position.data(), actual_position.size());
+    Eigen::VectorXd dq = Eigen::Map<Eigen::VectorXd>(actual_velocity.data(), actual_velocity.size());
+
+    double start_error = (sampled.position.front() - q).cwiseAbs().maxCoeff();
+    if (start_error > trajectory_start_tolerance_)
+        {RCLCPP_ERROR(get_logger(), "ERROR: Trajectory Not Starting from the Actual Configuration | Error: %.5f rad > %.5f rad\n", start_error, trajectory_start_tolerance_); return;}
+
+    double start_velocity_error = (sampled.velocity.front() - dq).cwiseAbs().maxCoeff();
+    if (start_velocity_error > TRAJECTORY_VELOCITY_TOLERANCE)
+        {RCLCPP_ERROR(get_logger(), "ERROR: Trajectory Starting Velocity != Actual Velocity | Error: %.5f rad/s\n", start_velocity_error); return;}
+
+    if (sampled.velocity.back().cwiseAbs().maxCoeff() > TRAJECTORY_VELOCITY_TOLERANCE)
+        {RCLCPP_ERROR(get_logger(), "ERROR: Trajectory Final Velocity != 0\n"); return;}
+
+    // Check Joint, Velocity and Acceleration Limits
+    double max_position = 0.0, max_velocity = 0.0, max_acceleration = 0.0;
+    for (size_t k = 0; k < sampled.size(); k++)
     {
-        // Check if the Resulting Trajectory Comply with the Limits. 
-        if (polynomial_fit_.evaluateMaxPolynomials(0.002) > JOINT_LIMITS || polynomial_fit_.evaluateMaxPolynomialsDer(0.002) > JOINT_VELOCITY_MAX || polynomial_fit_.evaluateMaxPolynomialsDDer(0.002) > JOINT_ACCELERATION_MAX)
-            {RCLCPP_ERROR(get_logger(), "ERROR: Joint Limit Not Satisfied.\n"); return;}
+        max_position     = std::max(max_position,     sampled.position[k].cwiseAbs().maxCoeff());
+        max_velocity     = std::max(max_velocity,     sampled.velocity[k].cwiseAbs().maxCoeff());
+        max_acceleration = std::max(max_acceleration, sampled.acceleration[k].cwiseAbs().maxCoeff());
+    }
 
-        // New Trajectory Received
-        trajectory_time_ = 0.0;
-        new_trajectory_received_ = true;
-        RCLCPP_INFO(get_logger(), "New Trajectory Received\n");
+    if (max_position > JOINT_LIMITS || max_velocity > JOINT_VELOCITY_MAX || max_acceleration > JOINT_ACCELERATION_MAX)
+        {RCLCPP_ERROR(get_logger(), "ERROR: Joint Limit Not Satisfied | Max Position: %.3f, Max Velocity: %.3f, Max Acceleration: %.3f\n", max_position, max_velocity, max_acceleration); return;}
 
-    } else {RCLCPP_ERROR(get_logger(), "ERROR: Unable to Fit the Trajectory! | Check Data Points.\n");}
+    std::vector<double> final_position(sampled.position.back().data(), sampled.position.back().data() + n_joints);
+    if (!rtde_control_ -> isJointsWithinSafetyLimits(final_position)) {RCLCPP_ERROR(get_logger(), "ERROR: Trajectory Final Position Outside Safety Limits\n"); return;}
+
+    // New Trajectory -> Replaces the One in Execution
+    const double duration = (sampled.size() - 1) / rate_;
+    {
+        std::lock_guard<std::mutex> lock(trajectory_mutex_);
+        trajectory_ = std::move(sampled);
+        trajectory_index_ = 0;
+        trajectory_settling_cycles_ = 0;
+        trajectory_active_ = true;
+    }
+
+    RCLCPP_INFO(get_logger(), "New Trajectory Received | Duration: %.3f s\n", duration);
 }
 
 void RTDEController::jointGoalCallback(const trajectory_msgs::msg::JointTrajectoryPoint::SharedPtr msg)
 {
+    // Reject if Torque Mode is Active
+    if (isTorqueModeActive("Joint Goal Command")) return;
+
     // Check Input Data Size
     if (msg->positions.size() != 6) {RCLCPP_ERROR(get_logger(), "ERROR: Received Joint Position Goal Size != 6\n"); return;}
     if (durationToSec(msg->time_from_start) == 0 && msg->velocities.size() == 0) {RCLCPP_ERROR(get_logger(), "ERROR: Desired Time = 0\n"); return;}
@@ -241,7 +336,8 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::msg::JointTrajecto
 
     // Get Desired and Actual Joint Pose
     Eigen::VectorXd desired_pose = Eigen::VectorXd::Map(msg->positions.data(), msg->positions.size());
-    Eigen::VectorXd actual_pose  = Eigen::VectorXd::Map(actual_joint_position_.data(), actual_joint_position_.size());
+    std::vector<double> actual_joint_position = getActualJointPosition();
+    Eigen::VectorXd actual_pose  = Eigen::VectorXd::Map(actual_joint_position.data(), actual_joint_position.size());
 
     // Check Joint Limits
     if (!rtde_control_ -> isJointsWithinSafetyLimits(msg->positions)) {RCLCPP_ERROR(get_logger(), "ERROR: Received Joint Position Outside Safety Limits\n"); return;}
@@ -283,6 +379,9 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::msg::JointTrajecto
 
 void RTDEController::cartesianGoalCallback(const ur_rtde_controller::msg::CartesianPoint::SharedPtr msg)
 {
+    // Reject if Torque Mode is Active
+    if (isTorqueModeActive("Cartesian Goal Command")) return;
+
     // Convert Geometry Pose to RTDE Pose
     std::vector<double> desired_pose = Pose2RTDE(msg->cartesian_pose);
 
@@ -304,26 +403,28 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::msg::Cartes
 
 void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
 {
+    // Reject if Torque Mode is Active
+    if (isTorqueModeActive("Joint Velocity Command")) return;
+
     // Check Input Data Size
     if (msg->data.size() != 6) {RCLCPP_ERROR(get_logger(), "ERROR: Received Joint Velocity Size != 6\n"); return;}
 
     // Get Current and Desired Joint Velocity
     std::vector<double> desired_velocity = msg->data;
-    std::vector<double> current_velocity = actual_joint_velocity_;
+    std::vector<double> current_velocity = getActualJointVelocity();
 
-    // // Compute Velocity Difference
+    // Compute Velocity Difference
     Eigen::VectorXd velocity_difference = Eigen::VectorXd::Map(desired_velocity.data(), desired_velocity.size()) 
                                         - Eigen::VectorXd::Map(current_velocity.data(), current_velocity.size());
 
-    // Compute MAX Acceleration
-    double acceleration = velocity_difference.array().abs().maxCoeff() / rate_;
-    acceleration = sign(acceleration) * std::max(std::fabs(acceleration), 1.0);
+    // Compute MAX Acceleration -> Reach the Desired Velocity in One Control Cycle (dv / dt)
+    double acceleration = std::max(velocity_difference.array().abs().maxCoeff() * rate_, 1.0);
 
     // Set Acceleration to a Fixed (Maximum) Value
     // double acceleration = 10.0; 
 
     // Check Acceleration Limits
-    if (limit_acc_ && acceleration > JOINT_ACCELERATION_MAX) {RCLCPP_ERROR(get_logger(), "Requested Acceleration > Maximum Acceleration\n"); 
+    if (limit_acc_ && acceleration > JOINT_ACCELERATION_MAX) {RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "Requested Acceleration > Maximum Acceleration -> Clamped to %.1f rad/s^2\n", JOINT_ACCELERATION_MAX);
                                                               acceleration = JOINT_ACCELERATION_MAX;}
 
     // Joint Velocity Publisher
@@ -332,6 +433,9 @@ void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArra
 
 void RTDEController::cartesianVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
+    // Reject if Torque Mode is Active
+    if (isTorqueModeActive("Cartesian Velocity Command")) return;
+
     // Get Current Cartesian Velocity
     std::vector<double> current_velocity = rtde_receive_ -> getActualTCPSpeed();
 
@@ -363,9 +467,9 @@ void RTDEController::digitalIOSetCallback(const std_msgs::msg::Int8::SharedPtr m
     //NOTE: As 0 id wouldn't be able to specify the value, ids are shifted by 1
 	// output boolean = sign(msg)
 	// output id	  = abs(msg) -1 
+	if (msg->data == 0) {RCLCPP_ERROR(get_logger(), "ERROR: Digital Output Command = 0 -> Use +/-(id + 1)\n"); return;}
 	uint8_t output_id = abs(msg->data) - 1;
-	bool signal_level = false;
-	if (msg->data > 0) {signal_level = true;}
+	bool signal_level = msg->data > 0;
 	rtde_io_ -> setStandardDigitalOut(output_id,signal_level);
 }
 
@@ -375,9 +479,9 @@ void RTDEController::toolDigitalIOSetCallback(const std_msgs::msg::Int8::SharedP
     //NOTE: As 0 id wouldn't be able to specify the value, ids are shifted by 1
     // output boolean = sign(msg)
     // output id	  = abs(msg) - 1
+    if (msg->data == 0) {RCLCPP_ERROR(get_logger(), "ERROR: Tool Digital Output Command = 0 -> Use +/-(id + 1)\n"); return;}
     uint8_t output_id = abs(msg->data) - 1;
-    bool signal_level = false;
-    if (msg->data >= 0) {signal_level = true;}
+    bool signal_level = msg->data > 0;
     rtde_io_ -> setToolDigitalOut(output_id, signal_level);
 }
 
@@ -410,6 +514,9 @@ bool RTDEController::setAsyncParameterCallback(const std::shared_ptr<std_srvs::s
 
 bool RTDEController::startFreedriveModeCallback(const std::shared_ptr<ur_rtde_controller::srv::StartFreedriveMode::Request> request, std::shared_ptr<ur_rtde_controller::srv::StartFreedriveMode::Response> response)
 {
+    // Reject if Torque Mode is Active -> RTDE Control Interface Busy
+    if (isTorqueModeActive("Start Freedrive Mode")) {response->success = false; return true;}
+
     // freeAxes = [1,0,0,0,0,0]     -> The robot is compliant in the x direction relative to the feature.
     // freeAxes: A 6 dimensional vector that contains 0’s and 1’s, these indicates in which axes movement is allowed. The first three values represents the cartesian directions along x, y, z, and the last three defines the rotation axis, rx, ry, rz. All relative to the selected feature
 
@@ -420,6 +527,9 @@ bool RTDEController::startFreedriveModeCallback(const std::shared_ptr<ur_rtde_co
 
 bool RTDEController::stopFreedriveModeCallback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response)
 {
+    // Reject if Torque Mode is Active -> RTDE Control Interface Busy
+    if (isTorqueModeActive("Stop Freedrive Mode")) {response->success = false; return true;}
+
     // Exit from FreeDrive Mode
     auto req = request;
     response->success = rtde_control_ -> endFreedriveMode();
@@ -428,6 +538,9 @@ bool RTDEController::stopFreedriveModeCallback(const std::shared_ptr<std_srvs::s
 
 bool RTDEController::zeroFTSensorCallback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response)
 {
+    // Reject if Torque Mode is Active -> RTDE Control Interface Busy
+    if (isTorqueModeActive("Zero FT Sensor")) {response->success = false; return true;}
+
     // Reset Force-Torque Sensor
     auto req = request;
     response->success = rtde_control_ -> zeroFtSensor();
@@ -436,6 +549,9 @@ bool RTDEController::zeroFTSensorCallback(const std::shared_ptr<std_srvs::srv::T
 
 bool RTDEController::getForwardKinematicCallback(const std::shared_ptr<ur_rtde_controller::srv::GetForwardKinematic::Request> request, std::shared_ptr<ur_rtde_controller::srv::GetForwardKinematic::Response> response)
 {
+    // Reject if Torque Mode is Active -> RTDE Control Interface Busy
+    if (isTorqueModeActive("Forward Kinematic")) {response->success = false; return true;}
+
     // Compute Forward Kinematic
     std::vector<double> tcp_pose = rtde_control_ -> getForwardKinematics(request->joint_position, {0.0,0.0,0.0,0.0,0.0,0.0});
 
@@ -448,6 +564,9 @@ bool RTDEController::getForwardKinematicCallback(const std::shared_ptr<ur_rtde_c
 
 bool RTDEController::getInverseKinematicCallback(const std::shared_ptr<ur_rtde_controller::srv::GetInverseKinematic::Request> request, std::shared_ptr<ur_rtde_controller::srv::GetInverseKinematic::Response> response)
 {
+    // Reject if Torque Mode is Active -> RTDE Control Interface Busy
+    if (isTorqueModeActive("Inverse Kinematic")) {response->success = false; return true;}
+
     // Convert Geometry Pose to RTDE Pose
     std::vector<double> tcp_pose = Pose2RTDE(request->tcp_position);
 
@@ -513,21 +632,28 @@ bool RTDEController::getSafetyStatusCallback(const std::shared_ptr<ur_rtde_contr
      ***********************************************/
 
     std::vector<std::string> robot_mode_msg = {"ROBOT_MODE_NO_CONTROLLER", "ROBOT_MODE_DISCONNECTED", "ROBOT_MODE_CONFIRM_SAFETY", "ROBOT_MODE_BOOTING", "ROBOT_MODE_POWER_OFF", "ROBOT_MODE_POWER_ON", "ROBOT_MODE_IDLE", "ROBOT_MODE_BACKDRIVE", "ROBOT_MODE_RUNNING", "ROBOT_MODE_UPDATING_FIRMWARE"};
-    std::vector<std::string> safety_mode_msg = {"NORMAL", "REDUCED", "PROTECTIVE_STOP", "RECOVERY", "SAFEGUARD_STOP", "SYSTEM_EMERGENCY_STOP", "ROBOT_EMERGENCY_STOP", "VIOLATION" "FAULT"};
+    std::vector<std::string> safety_mode_msg = {"NORMAL", "REDUCED", "PROTECTIVE_STOP", "RECOVERY", "SAFEGUARD_STOP", "SYSTEM_EMERGENCY_STOP", "ROBOT_EMERGENCY_STOP", "VIOLATION", "FAULT"};
     std::vector<std::string> safety_status_bits_msg = {"Is normal mode", "Is reduced mode", "Is protective stopped", "Is recovery mode", "Is safeguard stopped", "Is system emergency stopped", "Is robot emergency stopped", "Is emergency stopped", "Is violation", "Is fault", "Is stopped due to safety"};
 
     // Get Robot Mode
     auto req = request;
     response->robot_mode = rtde_receive_ -> getRobotMode();
-    response->robot_mode_msg = robot_mode_msg[response->robot_mode + 1];
+    size_t robot_mode_index = response->robot_mode + 1;
+    response->robot_mode_msg = (robot_mode_index < robot_mode_msg.size()) ? robot_mode_msg[robot_mode_index] : "UNKNOWN";
 
     // Get Safety Mode
     response->safety_mode = rtde_receive_ -> getSafetyMode();
-    response->safety_mode_msg = safety_mode_msg[response->safety_mode];
+    size_t safety_mode_index = response->safety_mode;
+    response->safety_mode_msg = (safety_mode_index < safety_mode_msg.size()) ? safety_mode_msg[safety_mode_index] : "UNKNOWN";
 
-    // Get Safety Status Bits
-    response->safety_status_bits = int(rtde_receive_ -> getSafetyStatusBits());
-    response->safety_status_bits_msg = safety_status_bits_msg[response->safety_status_bits];
+    // Get Safety Status Bits -> Bitmask, List All the Active Bits
+    response->safety_status_bits = rtde_receive_ -> getSafetyStatusBits();
+    for (size_t bit = 0; bit < safety_status_bits_msg.size(); bit++)
+    {
+        if (!(response->safety_status_bits & (1u << bit))) continue;
+        if (!response->safety_status_bits_msg.empty()) response->safety_status_bits_msg += ", ";
+        response->safety_status_bits_msg += safety_status_bits_msg[bit];
+    }
 
     response->success = true;
     return true;
@@ -541,8 +667,10 @@ bool RTDEController::RobotiQGripperCallback(const std::shared_ptr<ur_rtde_contro
     float force    = double(request->force) / 100.0;
 
     // Move Gripper - Normalized Values (0.0 - 1.0)
+    if (!robotiq_gripper_ || !robotiq_gripper_ -> isConnected()) {RCLCPP_ERROR(get_logger(), "ERROR: RobotiQ Gripper Not Connected\n"); response->success = false; return true;}
+
     try {response->status = robotiq_gripper_ -> move(position, speed, force, ur_rtde::RobotiqGripper::WAIT_FINISHED);}
-    catch (const std::exception &e) {return false;}
+    catch (const std::exception &e) {RCLCPP_ERROR(get_logger(), "ERROR: RobotiQ Gripper Move Failed: %s\n", e.what()); response->success = false; return true;}
 
     /************************************************************************************************
      *                                                                                              *
@@ -565,14 +693,18 @@ bool RTDEController::enableRobotiQGripperCallback(const std::shared_ptr<std_srvs
     auto req = request;
     enable_gripper_ = true;
 
-    // Create the Gripper Class if Doesn't Exist
-    if (robotiq_gripper_ == nullptr) robotiq_gripper_ = new ur_rtde::RobotiqGripper(ROBOT_IP, 63352, false);
+    try {
 
-    // Connect the Gripper if Not Connected
-    if (!robotiq_gripper_ -> isConnected()) robotiq_gripper_ -> connect();
+        // Create the Gripper Class if Doesn't Exist
+        if (!robotiq_gripper_) robotiq_gripper_ = std::make_unique<ur_rtde::RobotiqGripper>(ROBOT_IP, 63352, false);
 
-    // Activate the Gripper
-    robotiq_gripper_ -> activate();
+        // Connect the Gripper if Not Connected
+        if (!robotiq_gripper_ -> isConnected()) robotiq_gripper_ -> connect();
+
+        // Activate the Gripper
+        robotiq_gripper_ -> activate();
+
+    } catch (const std::exception &e) {RCLCPP_ERROR(get_logger(), "ERROR: Failed to Enable the RobotiQ Gripper: %s\n", e.what()); response->success = false; return true;}
 
     // Create the Gripper Service Server if Doesn't Exist
     if (robotiq_gripper_server_ == nullptr) robotiq_gripper_server_ = create_service<ur_rtde_controller::srv::RobotiQGripperControl>("/ur_rtde/robotiq_gripper/command", std::bind(&RTDEController::RobotiQGripperCallback, this, std::placeholders::_1, std::placeholders::_2));
@@ -606,6 +738,7 @@ bool RTDEController::currentPositionRobotiQGripperCallback(
                            std::shared_ptr<ur_rtde_controller::srv::GetGripperPosition::Response> response)
 {
 	// Get Current RobotiQ Gripper Position
+	if (!robotiq_gripper_ || !robotiq_gripper_ -> isConnected()) {RCLCPP_ERROR(get_logger(), "ERROR: RobotiQ Gripper Not Connected\n"); response->success = false; return true;}
 	response->current_position = robotiq_gripper_ -> getCurrentPosition();
 
 	response->success = true;
@@ -621,8 +754,11 @@ void RTDEController::publishJointState()
     joint_state_.position = rtde_receive_ -> getActualQ();
     joint_state_.velocity = rtde_receive_ -> getActualQd();
 
-    actual_joint_position_ = joint_state_.position;
-    actual_joint_velocity_ = joint_state_.velocity;
+    {
+        std::lock_guard<std::mutex> lock(joint_state_mutex_);
+        actual_joint_position_ = joint_state_.position;
+        actual_joint_velocity_ = joint_state_.velocity;
+    }
 
     // Publish JointState
     joint_state_pub_ -> publish(joint_state_);
@@ -661,16 +797,19 @@ void RTDEController::publishFTSensor()
 void RTDEController::resetBooleans()
 {
     // Reset Booleans Variables
-    new_trajectory_received_ = false;
     new_async_joint_pose_received_ = false;
     new_async_cartesian_pose_received_ = false;
+
+    // Abort the Trajectory in Execution
+    std::lock_guard<std::mutex> lock(trajectory_mutex_);
+    trajectory_active_ = false;
 }
 
-void RTDEController::publishTrajectoryExecuted()
+void RTDEController::publishTrajectoryExecuted(bool success)
 {
     // Publish Trajectory Executed Message
     std_msgs::msg::Bool trajectory_executed;
-    trajectory_executed.data = true;
+    trajectory_executed.data = success;
     trajectory_executed_pub_ -> publish(trajectory_executed);
 
     // Reset Booleans Variables
@@ -763,44 +902,52 @@ bool RTDEController::isPoseReached(Eigen::VectorXd position_error, double moveme
     else return false;
 }
 
-bool RTDEController::isJointReached()
-{
-    // Compute Joint Error
-    Eigen::VectorXd error = polynomial_fit_.getLastPoint() - Eigen::Map<Eigen::VectorXd>(actual_joint_position_.data(), actual_joint_position_.size());
-    if (error.cwiseAbs().maxCoeff() < SENSOR_ERROR && trajectory_time_ > polynomial_fit_.getFinalTime()) return true;
-    else return false;
-}
-
 void RTDEController::moveTrajectory()
 {
-    // Return if No Trajectory Received
-    if (!new_trajectory_received_) return;
+    std::unique_lock<std::mutex> lock(trajectory_mutex_);
 
-    // Check if Trajectory is Ended
-    if (isJointReached())
+    // Return if No Trajectory in Execution
+    if (!trajectory_active_) return;
+
+    std::vector<double> actual_joint_position = getActualJointPosition();
+    Eigen::VectorXd q = Eigen::Map<Eigen::VectorXd>(actual_joint_position.data(), actual_joint_position.size());
+
+    Eigen::VectorXd desired_velocity;
+    double acceleration = TRAJECTORY_MIN_ACCELERATION;
+
+    if (trajectory_index_ < trajectory_.size())
     {
-        // Stop Speed Mode
-        rtde_control_ -> speedStop();
+        // Tracking -> Feedforward Velocity + Position Correction
+        const size_t k = trajectory_index_++;
+        desired_velocity = trajectory_.velocity[k] + TRAJECTORY_POSITION_GAIN * (trajectory_.position[k] - q);
+        acceleration = std::max(trajectory_.acceleration[k].cwiseAbs().maxCoeff(), TRAJECTORY_MIN_ACCELERATION);
+    }
+    else
+    {
+        // Settling -> Position Correction on the Final Point until Goal Tolerance or Timeout
+        Eigen::VectorXd error = trajectory_.position.back() - q;
+        bool goal_reached = error.cwiseAbs().maxCoeff() < trajectory_goal_tolerance_;
 
-        // Publish Trajectory Executed
-        publishTrajectoryExecuted();
-        resetBooleans();
-        return;
+        if (goal_reached || ++trajectory_settling_cycles_ > TRAJECTORY_SETTLING_TIME * rate_)
+        {
+            // Stop Speed Mode
+            rtde_control_ -> speedStop();
+            trajectory_active_ = false;
+            lock.unlock();
+
+            if (!goal_reached) RCLCPP_ERROR(get_logger(), "ERROR: Trajectory Goal Not Reached | Error: %.5f rad\n", error.cwiseAbs().maxCoeff());
+
+            // Publish Trajectory Executed
+            publishTrajectoryExecuted(goal_reached);
+            return;
+        }
+
+        desired_velocity = TRAJECTORY_POSITION_GAIN * error;
     }
 
-    // Create the Desired Velocity Vector
-    Eigen::VectorXd trajectory_vel = polynomial_fit_.evaluatePolynomialsDer(trajectory_time_);
-    trajectory_vel += (polynomial_fit_.evaluatePolynomials(trajectory_time_) - Eigen::Map<Eigen::VectorXd>(actual_joint_position_.data(), actual_joint_position_.size()));
-    std::vector<double> desired_velocity(trajectory_vel.data(), trajectory_vel.data() + trajectory_vel.size());
-
-    // Create the Desired Acceleration Vector
-    Eigen::VectorXd acc = polynomial_fit_.evaluatePolynomialsDDer(trajectory_time_);
-
     // Move Robot with Velocity Commands
-    rtde_control_ -> speedJ(desired_velocity, (acc.cwiseAbs()).maxCoeff(), 5e-4);
-
-    // Increase trajectory_time_
-    trajectory_time_ += 0.002;
+    std::vector<double> velocity_command(desired_velocity.data(), desired_velocity.data() + desired_velocity.size());
+    rtde_control_ -> speedJ(velocity_command, acceleration, 5e-4);
 }
 
 void RTDEController::checkAsyncMovements()
@@ -814,6 +961,15 @@ void RTDEController::checkAsyncMovements()
 
 void RTDEController::stopRobot()
 {
+    // Robot Not Initialized
+    if (!rtde_control_ || !rtde_dashboard_) return;
+
+    // Exit Torque Mode
+    stopTorqueMode();
+
+    // Reset Booleans Variables -> Abort the Trajectory in Execution Before Stopping
+    resetBooleans();
+
     // Stop Robot
     rtde_control_ -> stopJ(2.0);
 
@@ -824,9 +980,205 @@ void RTDEController::stopRobot()
     rtde_dashboard_ -> connect();
     rtde_dashboard_ -> closePopup();
     rtde_dashboard_ -> disconnect();
+}
 
-    // Reset Booleans Variables
+bool RTDEController::isTorqueModeActive(const std::string &command)
+{
+    if (!torque_mode_active_) return false;
+    RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000, "ERROR: %s Rejected -> Torque Mode Active\n", command.c_str());
+    return true;
+}
+
+void RTDEController::torqueCommandCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
+{
+    if (!torque_mode_active_) {RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "Torque Command Ignored -> Torque Mode Not Active\n"); return;}
+
+    // Check Input Data
+    if (msg->data.size() != 6) {RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000, "ERROR: Received Joint Torque Size != 6\n"); return;}
+    if (!std::all_of(msg->data.begin(), msg->data.end(), [](double tau) {return std::isfinite(tau);})) {RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000, "ERROR: Received Non-Finite Joint Torque\n"); return;}
+
+    // Store the Latest Command -> Consumed by the Torque Control Loop
+    std::lock_guard<std::mutex> lock(torque_command_mutex_);
+    torque_command_ = msg->data;
+    torque_command_new_ = true;
+}
+
+bool RTDEController::startTorqueModeCallback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+{
+    auto req = request;
+
+    std::lock_guard<std::mutex> thread_lock(torque_thread_mutex_);
+    if (torque_mode_active_) {response->success = false; response->message = "Torque Mode Already Active"; return true;}
+
+    // Join the Previous Torque Thread (Exited by Itself on Watchdog / Stop)
+    if (torque_thread_.joinable()) torque_thread_.join();
+
+    // Abort Trajectories and Async Movements
     resetBooleans();
+
+    // Discard Old Commands
+    {
+        std::lock_guard<std::mutex> lock(torque_command_mutex_);
+        torque_command_new_ = false;
+    }
+
+    // Start the Torque Control Loop
+    torque_mode_active_ = true;
+    torque_thread_ = std::thread(&RTDEController::torqueControlLoop, this);
+    publishTorqueModeActive(true);
+
+    RCLCPP_WARN(get_logger(), "Torque Mode Started -> Waiting for Commands on /ur_rtde/controllers/torque_controller/command\n");
+    response->success = true;
+    return true;
+}
+
+bool RTDEController::stopTorqueModeCallback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+{
+    auto req = request;
+    stopTorqueMode();
+    response->success = true;
+    return true;
+}
+
+bool RTDEController::setFrictionCompensationCallback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response)
+{
+    // Enable / Disable the UR Internal Friction Compensation -> Applied from the Next Torque Command
+    torque_friction_compensation_ = request->data;
+    RCLCPP_WARN(get_logger(), "Torque Mode Friction Compensation: %s\n", request->data ? "Enabled" : "Disabled");
+
+    response->success = true;
+    return true;
+}
+
+void RTDEController::stopTorqueMode()
+{
+    // Request the Loop Exit and Wait for It
+    std::lock_guard<std::mutex> thread_lock(torque_thread_mutex_);
+    torque_mode_active_ = false;
+    if (torque_thread_.joinable() && torque_thread_.get_id() != std::this_thread::get_id()) torque_thread_.join();
+}
+
+void RTDEController::publishTorqueModeActive(bool active)
+{
+    std_msgs::msg::Bool msg;
+    msg.data = active;
+    torque_mode_active_pub_ -> publish(msg);
+}
+
+void RTDEController::publishRobotDynamics()
+{
+    ur_rtde_controller::msg::RobotDynamics msg;
+    msg.header.stamp = now();
+
+    // Joint State from the RTDE Receive Interface
+    std::vector<double> q   = rtde_receive_ -> getActualQ();
+    std::vector<double> dq  = rtde_receive_ -> getActualQd();
+    std::vector<double> tau = rtde_receive_ -> getActualCurrentAsTorque();
+
+    // Dynamics from the Robot Controller, Computed on the Same Joint State
+    std::vector<double> M    = rtde_control_ -> getMassMatrix(q);
+    std::vector<double> C    = rtde_control_ -> getCoriolisAndCentrifugalTorques(q, dq);
+    std::vector<double> J    = rtde_control_ -> getJacobian(q);
+    std::vector<double> Jdot = rtde_control_ -> getJacobianTimeDerivative(q, dq);
+
+    if (q.size() != 6 || dq.size() != 6 || tau.size() != 6 || M.size() != 36 || C.size() != 6 || J.size() != 36 || Jdot.size() != 36)
+        throw std::runtime_error("Unexpected Robot Dynamics Size (PolyScope >= 5.23 Required)");
+
+    std::copy(q.begin(), q.end(), msg.position.begin());
+    std::copy(dq.begin(), dq.end(), msg.velocity.begin());
+    std::copy(tau.begin(), tau.end(), msg.effort.begin());
+    std::copy(C.begin(), C.end(), msg.coriolis.begin());
+
+    // UR Matrices are Column-Major -> Message Matrices are Row-Major
+    for (size_t row = 0; row < 6; row++)
+    {
+        for (size_t col = 0; col < 6; col++)
+        {
+            msg.mass_matrix[row * 6 + col]  = M[col * 6 + row];
+            msg.jacobian[row * 6 + col]     = J[col * 6 + row];
+            msg.jacobian_dot[row * 6 + col] = Jdot[col * 6 + row];
+        }
+    }
+
+    // TCP Pose and Wrench
+    msg.tcp_pose = RTDE2Pose(rtde_receive_ -> getActualTCPPose());
+    std::vector<double> wrench = rtde_receive_ -> getActualTCPForce();
+    msg.tcp_wrench.force.x  = wrench[0]; msg.tcp_wrench.force.y  = wrench[1]; msg.tcp_wrench.force.z  = wrench[2];
+    msg.tcp_wrench.torque.x = wrench[3]; msg.tcp_wrench.torque.y = wrench[4]; msg.tcp_wrench.torque.z = wrench[5];
+
+    robot_dynamics_pub_ -> publish(msg);
+}
+
+void RTDEController::torqueControlLoop()
+{
+    const auto start_time = std::chrono::steady_clock::now();
+    std::vector<double> torque(6, 0.0);
+    bool command_received = false;
+    int missed_cycles = 0;
+    std::string exit_reason;
+
+    try {
+
+        while (torque_mode_active_ && rclcpp::ok())
+        {
+            // Start of the Robot Control Cycle
+            auto t_cycle_start = rtde_control_ -> initPeriod();
+
+            // Exit on Emergency / Protective Stop
+            if (rtde_receive_ -> isEmergencyStopped() || rtde_receive_ -> isProtectiveStopped()) {exit_reason = "Emergency / Protective Stop"; break;}
+
+            // Publish the Robot State and Dynamics for the External Controller
+            publishRobotDynamics();
+
+            // Get the Latest Command
+            bool new_command = false;
+            {
+                std::lock_guard<std::mutex> lock(torque_command_mutex_);
+                if (torque_command_new_)
+                {
+                    new_command = true;
+                    torque_command_new_ = false;
+                    torque = torque_command_;
+                }
+            }
+
+            // Watchdog -> Hold the Last Command for torque_watchdog_cycles, then Exit
+            if (new_command) {command_received = true; missed_cycles = 0;}
+            else if (command_received && ++missed_cycles > torque_watchdog_cycles_) {exit_reason = "Watchdog -> No Torque Command for " + std::to_string(missed_cycles) + " Cycles"; break;}
+
+            // Wait for the First Command -> Robot Stays in Position Control
+            if (!command_received)
+            {
+                if (std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count() > TORQUE_MODE_START_TIMEOUT) {exit_reason = "No Torque Command Received after Start"; break;}
+                rtde_control_ -> waitPeriod(t_cycle_start);
+                continue;
+            }
+
+            // Saturate and Send the Torque Command
+            std::vector<double> torque_command(6);
+            for (size_t j = 0; j < 6; j++)
+            {
+                torque_command[j] = std::clamp(torque[j], -torque_limits_[j], torque_limits_[j]);
+                if (torque_command[j] != torque[j]) RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "Joint %zu Torque Saturated: %.2f -> %.2f Nm\n", j, torque[j], torque_command[j]);
+            }
+
+            if (!rtde_control_ -> directTorque(torque_command, torque_friction_compensation_)) {exit_reason = "directTorque Failed"; break;}
+
+            // Wait the End of the Robot Control Cycle
+            rtde_control_ -> waitPeriod(t_cycle_start);
+        }
+
+    } catch (const std::exception &e) {exit_reason = std::string("Exception: ") + e.what();}
+
+    torque_mode_active_ = false;
+
+    // Stop the Robot -> Back to Position Control
+    try {rtde_control_ -> stopJ(2.0);}
+    catch (const std::exception &e) {RCLCPP_ERROR(get_logger(), "Failed to Stop the Robot after Torque Mode: %s\n", e.what());}
+
+    publishTorqueModeActive(false);
+    if (exit_reason.empty()) RCLCPP_WARN(get_logger(), "Torque Mode Stopped\n");
+    else RCLCPP_ERROR(get_logger(), "Torque Mode Stopped | %s\n", exit_reason.c_str());
 }
 
 void RTDEController::checkRobotStatus()
@@ -835,8 +1187,8 @@ void RTDEController::checkRobotStatus()
     bool eStop = false, protectiveStop = false;
 
     // Print Robot Emergency and Protective Stop
-    while (rtde_receive_ -> isEmergencyStopped())  {RCLCPP_WARN_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "EMERGENCY STOP PRESSED"); eStop = true;}
-    while (rtde_receive_ -> isProtectiveStopped()) {RCLCPP_WARN_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "PROTECTIVE STOP");         protectiveStop = true;}
+    while (rclcpp::ok() && rtde_receive_ -> isEmergencyStopped())  {RCLCPP_WARN_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "EMERGENCY STOP PRESSED"); eStop = true;          rclcpp::sleep_for(std::chrono::milliseconds(10));}
+    while (rclcpp::ok() && rtde_receive_ -> isProtectiveStopped()) {RCLCPP_WARN_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "PROTECTIVE STOP");         protectiveStop = true; rclcpp::sleep_for(std::chrono::milliseconds(10));}
 
     // Check Flags
     if (eStop)
@@ -845,12 +1197,15 @@ void RTDEController::checkRobotStatus()
         RCLCPP_WARN(get_logger(), "EMERGENCY STOP RELEASED\n");
 
         // Check if Robot Mode is ROBOT_MODE_RUNNING
-        while (rtde_receive_ -> getRobotMode() != ROBOT_MODE_RUNNING) {RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "Wait for Robot Recovery...");}
+        while (rclcpp::ok() && rtde_receive_ -> getRobotMode() != ROBOT_MODE_RUNNING) {RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "Wait for Robot Recovery..."); rclcpp::sleep_for(std::chrono::milliseconds(10));}
     
     } else if (protectiveStop) {RCLCPP_WARN(get_logger(), "PROTECTIVE STOP RECOVERED\n");}
         
     if (eStop || protectiveStop)
     {
+        // Exit Torque Mode (the Loop Already Stops on Emergency/Protective Stop)
+        stopTorqueMode();
+
         // Re-Upload RTDE Control Script
         rtde_control_ -> reuploadScript();
         rtde_control_ -> disconnect();
@@ -889,86 +1244,41 @@ void RTDEController::spinner()
     executor.add_node(this->get_node_base_interface());
 
     // Add timers
+    const auto period = std::chrono::duration<double>(1.0 / rate_);
     auto cb_group_timer1 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    jointState_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishJointState, this), cb_group_timer1);
+    jointState_timer_ = create_wall_timer(period, std::bind(&RTDEController::publishJointState, this), cb_group_timer1);
 
     auto cb_group_timer2 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    tcpPose_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishTCPPose, this), cb_group_timer2);
+    tcpPose_timer_ = create_wall_timer(period, std::bind(&RTDEController::publishTCPPose, this), cb_group_timer2);
 
     auto cb_group_timer3 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    force_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishFTSensor, this), cb_group_timer3);
+    force_timer_ = create_wall_timer(period, std::bind(&RTDEController::publishFTSensor, this), cb_group_timer3);
 
     auto cb_group_timer4 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    checkRobot_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::checkRobot, this), cb_group_timer4);
+    checkRobot_timer_ = create_wall_timer(period, std::bind(&RTDEController::checkRobot, this), cb_group_timer4);
 
     // Spin the Executor
     executor.spin();
-
-    // Set Shutdown Trigger
-    shutdown_ = true;
-}
-
-// Create Null-Pointers to the RTDE Class and the Threads
-// RTDEController *rtde = nullptr;
-// std::thread *publishJointState = nullptr;
-// std::thread *publishTCPPose    = nullptr;
-// std::thread *publishFTSensor   = nullptr;
-
-void signalHandler(int signal)
-{
-    std::cout << "\nKeyboard Interrupt Received\n";
-
-    // Set Shutdown Trigger
-    // rtde -> shutdown_ = true;
-
-    // Join Threads on Main
-    // publishJointState -> join();
-    // publishTCPPose    -> join();
-    // publishFTSensor   -> join();
-
-    // Call Destructor
-    // delete rtde;
-    exit(signal);
-
-    rclcpp::shutdown();
 }
 
 int main(int argc, char **argv) {
 
-    // Initialize ROS
+    // Initialize ROS -> Default SIGINT Handler Stops the Executor
     rclcpp::init(argc, argv);
-
-    // Create a SIGINT Handler
-    struct sigaction sa;
-    sa.sa_handler = signalHandler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sigaction(SIGINT, &sa, NULL);
     std::cout << std::endl;
 
-    // Create a New RTDEController
-    auto rtde = std::make_shared<RTDEController>();
-    // rtde = new RTDEController();
+    try {
 
-    // Publish JointState, TCPPose, FTSensor in separate Threads
-    // publishJointState = new std::thread(&RTDEController::publishJointState, rtde);
-    // publishTCPPose    = new std::thread(&RTDEController::publishTCPPose,    rtde);
-    // publishFTSensor   = new std::thread(&RTDEController::publishFTSensor,   rtde);
-    // rclcpp::sleep_for(std::chrono::seconds(1));
+        // Create a New RTDEController
+        auto rtde = std::make_shared<RTDEController>();
 
-    // Main Spinner
-    rtde->spinner();
+        // Main Spinner
+        rtde->spinner();
 
-    // Set Shutdown Trigger
-    // rtde -> shutdown_ = true;
+        // Stop the Robot and Disconnect (Destructor) Before Shutting Down ROS
+        rtde.reset();
 
-    // Join Threads on Main
-    // publishJointState -> join();
-    // publishTCPPose    -> join();
-    // publishFTSensor   -> join();
-
-    // Call Destructor
-    // delete rtde;
+    } catch (const std::exception &e) {std::cerr << "UR RTDE Controller: " << e.what() << std::endl;}
 
     // Shutdown ROS
     rclcpp::shutdown();

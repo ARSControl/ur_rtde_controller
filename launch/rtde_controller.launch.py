@@ -13,6 +13,8 @@ def create_example_node():
         'limit_acc':      LaunchConfiguration('limit_acc'),
         'ft_sensor':      LaunchConfiguration('ft_sensor'),
         'rate':           LaunchConfiguration('rate'),
+        'trajectory_start_tolerance': LaunchConfiguration('trajectory_start_tolerance'),
+        'trajectory_goal_tolerance':  LaunchConfiguration('trajectory_goal_tolerance'),
     }
 
     # Python Node + Parameters + YAML Config File
@@ -42,6 +44,8 @@ def generate_launch_description():
     ft_sensor_arg      = DeclareLaunchArgument('ft_sensor',      default_value='true')
     rate_arg           = DeclareLaunchArgument('rate',           default_value='500.0')
     joint_state_topic_arg = DeclareLaunchArgument('joint_state_topic', default_value='/joint_states')
+    trajectory_start_tolerance_arg = DeclareLaunchArgument('trajectory_start_tolerance', default_value='0.001')
+    trajectory_goal_tolerance_arg  = DeclareLaunchArgument('trajectory_goal_tolerance',  default_value='0.001')
 
     # Launch Description - Add Arguments
     launch_description.add_action(ROBOT_IP_arg)
@@ -51,6 +55,8 @@ def generate_launch_description():
     launch_description.add_action(ft_sensor_arg)
     launch_description.add_action(rate_arg)
     launch_description.add_action(joint_state_topic_arg)
+    launch_description.add_action(trajectory_start_tolerance_arg)
+    launch_description.add_action(trajectory_goal_tolerance_arg)
 
     # Launch Description - Add Nodes
     launch_description.add_action(create_example_node())

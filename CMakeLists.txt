@@ -44,6 +44,7 @@ find_package(ur_rtde REQUIRED)
 # Set Cusom Messages
 set(msg_files
   "msg/CartesianPoint.msg"
+  "msg/RobotDynamics.msg"
 )
 
 # Set Custom Services
@@ -73,24 +74,18 @@ include_directories(
   ${${PROJECT_NAME}_INCLUDE_DIRS}
 )
 
-add_library(polyfit_lib SHARED src/polyfit/polyfit.cpp)
-ament_export_targets(polyfit_lib)
+# Joint Trajectory Sampler Library
+add_library(joint_trajectory_sampler STATIC src/trajectory/joint_trajectory_sampler.cpp)
+target_include_directories(joint_trajectory_sampler PUBLIC include)
+target_link_libraries(joint_trajectory_sampler Eigen3::Eigen)
 
-install(
-    TARGETS polyfit_lib
-    EXPORT polyfit_lib
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-    RUNTIME DESTINATION bin
-    INCLUDES DESTINATION include
-)
 ament_export_dependencies(rosidl_default_runtime)
 
 # RTDE Controller - C++ Executables
 add_executable(rtde_controller src/rtde_controller/rtde_controller.cpp)
 ament_target_dependencies(rtde_controller rclcpp std_msgs sensor_msgs geometry_msgs trajectory_msgs std_srvs)
 rosidl_get_typesupport_target(rtde_controller ${PROJECT_NAME} rosidl_typesupport_cpp)
-target_link_libraries(rtde_controller ${PROJECT_NAME}__rosidl_typesupport_cpp "${cpp_typesupport_target}" ur_rtde::rtde polyfit_lib)
+target_link_libraries(rtde_controller ${PROJECT_NAME}__rosidl_typesupport_cpp "${cpp_typesupport_target}" ur_rtde::rtde joint_trajectory_sampler)
 
 # Install C++ Executables
 install(TARGETS
@@ -120,6 +115,10 @@ if(BUILD_TESTING)
   #set(ament_cmake_copyright_FOUND TRUE)
   #set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_joint_trajectory_sampler test/test_joint_trajectory_sampler.cpp)
+  target_link_libraries(test_joint_trajectory_sampler joint_trajectory_sampler)
 endif()
 
 ament_package()
