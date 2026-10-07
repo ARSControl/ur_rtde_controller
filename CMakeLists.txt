@@ -89,8 +89,8 @@ ament_export_dependencies(rosidl_default_runtime)
 # RTDE Controller - C++ Executables
 add_executable(rtde_controller src/rtde_controller/rtde_controller.cpp)
 ament_target_dependencies(rtde_controller rclcpp std_msgs sensor_msgs geometry_msgs trajectory_msgs std_srvs)
-rosidl_get_typesupport_target(rtde_controller ${PROJECT_NAME} rosidl_typesupport_cpp)
-target_link_libraries(rtde_controller ${PROJECT_NAME}__rosidl_typesupport_cpp "${cpp_typesupport_target}" ur_rtde::rtde polyfit_lib)
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_typesupport_cpp)
+target_link_libraries(rtde_controller "${cpp_typesupport_target}" ur_rtde::rtde polyfit_lib)
 
 # Install C++ Executables
 install(TARGETS

@@ -18,7 +18,7 @@ def create_example_node():
     # Python Node + Parameters + YAML Config File
     example_node = Node(
         package='ur_rtde_controller', executable='rtde_controller', name='ur_rtde_controller',
-        output='screen', emulate_tty=True, output_format='{line}', arguments=[('__log_level:=info')],
+        output='screen', emulate_tty=True, output_format='{line}', arguments=['--ros-args', '--log-level', 'info'],
         parameters=[robot_parameters],
     )
 
