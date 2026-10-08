@@ -30,9 +30,9 @@ def generate_launch_description():
     launch_description = LaunchDescription()
 
     # Robot Arguments
-    ROBOT_IP_arg       = DeclareLaunchArgument('ROBOT_IP',       default_value='192.168.137.102')   # UR5e DAL
-    # ROBOT_IP_arg       = DeclareLaunchArgument('ROBOT_IP',       default_value='192.168.2.40')    # UR5e ArsControl
-    # ROBOT_IP_arg       = DeclareLaunchArgument('ROBOT_IP',       default_value='192.168.2.30')    # UR10e ArsControl
+    # ROBOT_IP_arg       = DeclareLaunchArgument('ROBOT_IP',       default_value='192.168.137.102')   # UR5e DAL
+    # ROBOT_IP_arg       = DeclareLaunchArgument('ROBOT_IP',       default_value='192.168.2.30')    # UR5e ArsControl
+    ROBOT_IP_arg       = DeclareLaunchArgument('ROBOT_IP',       default_value='192.168.2.40')    # UR10e ArsControl
     enable_gripper_arg = DeclareLaunchArgument('enable_gripper', default_value='false')
     asynchronous_arg   = DeclareLaunchArgument('asynchronous',   default_value='false')
     limit_acc_arg      = DeclareLaunchArgument('limit_acc',      default_value='true')
