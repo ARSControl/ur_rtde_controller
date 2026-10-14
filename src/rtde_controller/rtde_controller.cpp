@@ -527,7 +527,7 @@ void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArra
     acceleration = sign(acceleration) * std::max(std::fabs(acceleration), 1.0);
 
     // Set Acceleration to a Fixed (Maximum) Value
-    // double acceleration = 10.0; 
+    acceleration = 10.0; 
 
     // Check Acceleration Limits
     if (limit_acc_ && acceleration > JOINT_ACCELERATION_MAX) {RCLCPP_ERROR(get_logger(), "Requested Acceleration > Maximum Acceleration\n"); 
