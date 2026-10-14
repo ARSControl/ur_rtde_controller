@@ -116,13 +116,18 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         double trajectory_time_;
 
         // UR RTDE Library
-        ur_rtde::RTDEControlInterface *rtde_control_;
-        ur_rtde::RTDEReceiveInterface *rtde_receive_;
-        ur_rtde::RTDEIOInterface *rtde_io_;
-        ur_rtde::DashboardClient *rtde_dashboard_;
+        ur_rtde::RTDEControlInterface *rtde_control_ = nullptr;
+        ur_rtde::RTDEReceiveInterface *rtde_receive_ = nullptr;
+        ur_rtde::RTDEIOInterface *rtde_io_ = nullptr;
+        ur_rtde::DashboardClient *rtde_dashboard_ = nullptr;
 
         // RobotiQ Gripper
-        ur_rtde::RobotiqGripper *robotiq_gripper_;
+        ur_rtde::RobotiqGripper *robotiq_gripper_ = nullptr;
+
+        enum class MotionMode { Idle, JointVelocity, CartesianVelocity, Trajectory,
+                                JointGoal, CartesianGoal, Freedrive, Fault };
+        MotionMode motion_mode_ = MotionMode::Idle;
+        bool velocity_commands_enabled_ = true;
 
         // ROS2 Publishers
         rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
@@ -136,6 +141,20 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         rclcpp::TimerBase::SharedPtr force_timer_;
         rclcpp::TimerBase::SharedPtr jointState_timer_;
         rclcpp::executors::MultiThreadedExecutor executor;
+
+        // Keep callback-group ownership explicit for the lifetime of the node.
+        rclcpp::CallbackGroup::SharedPtr control_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr trajectory_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr joint_goal_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr cartesian_goal_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr joint_velocity_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr cartesian_velocity_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr digital_io_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr tool_digital_io_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr joint_state_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr tcp_pose_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr force_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr robot_check_callback_group_;
 
         // ROS2 Subscribers and Callbacks
         rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr trajectory_command_sub_;
@@ -155,6 +174,7 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
 
         // ROS2 Service Servers and Callbacks
         rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr stop_robot_server_;
+        rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr set_velocity_commands_server_;
         rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr set_async_parameter_server_;
         rclcpp::Service<ur_rtde_controller::srv::StartFreedriveMode>::SharedPtr start_FreedriveMode_server_;
         rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr stop_FreedriveMode_server_;
@@ -167,6 +187,7 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr disable_gripper_server_;
         rclcpp::Service<ur_rtde_controller::srv::GetGripperPosition>::SharedPtr gripper_current_position_server_;
         bool stopRobotCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
+        bool setVelocityCommandsCallback(const std_srvs::srv::SetBool::Request::SharedPtr req, std_srvs::srv::SetBool::Response::SharedPtr res);
         bool setAsyncParameterCallback(const std_srvs::srv::SetBool::Request::SharedPtr req, std_srvs::srv::SetBool::Response::SharedPtr res);
         bool startFreedriveModeCallback(const ur_rtde_controller::srv::StartFreedriveMode::Request::SharedPtr req, ur_rtde_controller::srv::StartFreedriveMode::Response::SharedPtr res);
         bool stopFreedriveModeCallback(const std_srvs::srv::Trigger::Request::SharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res);
@@ -183,6 +204,11 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         void moveTrajectory();
         void checkAsyncMovements();
         void stopRobot();
+        bool motionBusy() const;
+        bool stopVelocityAndFreedrive();
+        bool beginPositionMotion(MotionMode mode);
+        void failMotion(const std::string & reason);
+        void publishMotionResult(bool success);
 
         // Utilities Functions
         void resetBooleans();

@@ -1,4 +1,5 @@
 #include "rtde_controller/rtde_controller.h"
+#include <cmath>
 
 int sign(double value) {
     if (value > 0) {return 1;}
@@ -11,6 +12,8 @@ double durationToSec(rclcpp::Duration duration) {
 }
 
 RTDEController::RTDEController(): Node ("ur_rtde_controller") {
+    // All users of RTDEControlInterface share this mutually exclusive group.
+    control_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     // Declare Parameters
     declare_parameter<std::string>("ROBOT_IP", std::string("192.168.2.30"));
@@ -63,13 +66,15 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
         catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Initialize the RTDE IO Interface:\n" << e.what());}
 
         // Reupload RTDE Control Script if Needed
-        if (rtde_dashboard_initialized && !rtde_dashboard_ -> running()) try {rtde_control_ -> reuploadScript(); rtde_dashboard_ -> disconnect();}
+        if (rtde_dashboard_initialized && rtde_control_initialized && !rtde_dashboard_ -> running()) try {rtde_control_ -> reuploadScript(); rtde_dashboard_ -> disconnect();}
         catch (const std::exception &e) {RCLCPP_ERROR_STREAM(get_logger(), "Failed to Reupload the RTDE Control Script:\n" << e.what());}
 
         // Robot Initialized
         if (rtde_dashboard_initialized && rtde_dashboard_connected && rtde_control_initialized && rtde_receive_initialized && rtde_io_initialized) robot_initialized = true;
 
     }
+
+    if (!robot_initialized) { throw std::runtime_error("Robot initialization interrupted"); }
 
     // RobotiQ Gripper
     if (enable_gripper_) {
@@ -82,14 +87,14 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
             robotiq_gripper_ -> activate();
 
             // Gripper Service Server
-            robotiq_gripper_server_ = create_service<ur_rtde_controller::srv::RobotiQGripperControl>("/ur_rtde/robotiq_gripper/command", std::bind(&RTDEController::RobotiQGripperCallback, this, std::placeholders::_1, std::placeholders::_2));
+            robotiq_gripper_server_ = create_service<ur_rtde_controller::srv::RobotiQGripperControl>("/ur_rtde/robotiq_gripper/command", std::bind(&RTDEController::RobotiQGripperCallback, this, std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
 
             // Gripper Enable/Disable Service Servers
-            enable_gripper_server_  = create_service<std_srvs::srv::Trigger>("/ur_rtde/robotiq_gripper/enable", std::bind(&RTDEController::enableRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2));
-            disable_gripper_server_ = create_service<std_srvs::srv::Trigger>("/ur_rtde/robotiq_gripper/disable", std::bind(&RTDEController::disableRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2));
+            enable_gripper_server_  = create_service<std_srvs::srv::Trigger>("/ur_rtde/robotiq_gripper/enable", std::bind(&RTDEController::enableRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
+            disable_gripper_server_ = create_service<std_srvs::srv::Trigger>("/ur_rtde/robotiq_gripper/disable", std::bind(&RTDEController::disableRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
 
 			// Gripper Current Position Service Server
-			gripper_current_position_server_ = create_service<ur_rtde_controller::srv::GetGripperPosition>("/ur_rtde/robotiq_gripper/current_position", std::bind(&RTDEController::currentPositionRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2));
+			gripper_current_position_server_ = create_service<ur_rtde_controller::srv::GetGripperPosition>("/ur_rtde/robotiq_gripper/current_position", std::bind(&RTDEController::currentPositionRobotiQGripperCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
 
         } catch(const std::exception& e) {std::cerr << "Error: " << e.what() << std::endl; RCLCPP_ERROR(get_logger(), "Failed to Start the RobotiQ 2F Gripper");}
 
@@ -104,7 +109,7 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
         ft_sensor_pub_ = create_publisher<geometry_msgs::msg::Wrench>("/ur_rtde/ft_sensor", 1);
 
         // Zero FT Sensor Service Server
-        zeroFT_sensor_server_ = create_service<std_srvs::srv::Trigger>("/ur_rtde/zeroFTSensor", std::bind(&RTDEController::zeroFTSensorCallback, this,std::placeholders::_1, std::placeholders::_2));
+        zeroFT_sensor_server_ = create_service<std_srvs::srv::Trigger>("/ur_rtde/zeroFTSensor", std::bind(&RTDEController::zeroFTSensorCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
 
     }
 
@@ -117,57 +122,63 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     tcp_pose_pub_            = create_publisher<geometry_msgs::msg::Pose>("/ur_rtde/cartesian_pose", 1);
     trajectory_executed_pub_ = create_publisher<std_msgs::msg::Bool>("/ur_rtde/trajectory_executed", 1);
 
-    // ROS - Subscribers -> TODO: ADD CALLBACK GROUPS
-    auto cb_group_sub1 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    rclcpp::SubscriptionOptions sub_options; sub_options.callback_group = cb_group_sub1;
+    // Commands are reliable and volatile: never replay a previous motion to a late subscriber.
+    const auto command_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile();
+    // ROS - Subscribers
+    trajectory_callback_group_ = control_callback_group_;
+    rclcpp::SubscriptionOptions sub_options; sub_options.callback_group = trajectory_callback_group_;
     trajectory_command_sub_ = create_subscription<trajectory_msgs::msg::JointTrajectory>("/ur_rtde/controllers/trajectory_controller/command",
-                                1, std::bind(&RTDEController::jointTrajectoryCallback, this, std::placeholders::_1),sub_options);
+                                command_qos, std::bind(&RTDEController::jointTrajectoryCallback, this, std::placeholders::_1),sub_options);
 
 
-    auto cb_group_sub2 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    sub_options.callback_group = cb_group_sub2;    
+    joint_goal_callback_group_ = control_callback_group_;
+    sub_options.callback_group = joint_goal_callback_group_;
     joint_goal_command_sub_ = create_subscription<trajectory_msgs::msg::JointTrajectoryPoint>("/ur_rtde/controllers/joint_space_controller/command",
-                                1, std::bind(&RTDEController::jointGoalCallback, this, std::placeholders::_1),sub_options);
+                                command_qos, std::bind(&RTDEController::jointGoalCallback, this, std::placeholders::_1),sub_options);
     
     
-    auto cb_group_sub3 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    sub_options.callback_group = cb_group_sub3;
+    cartesian_goal_callback_group_ = control_callback_group_;
+    sub_options.callback_group = cartesian_goal_callback_group_;
     cartesian_goal_command_sub_ = create_subscription<ur_rtde_controller::msg::CartesianPoint>("/ur_rtde/controllers/cartesian_space_controller/command",
-                                    1, std::bind(&RTDEController::cartesianGoalCallback, this, std::placeholders::_1),sub_options);
+                                    command_qos, std::bind(&RTDEController::cartesianGoalCallback, this, std::placeholders::_1),sub_options);
     
 
-    auto cb_group_sub4 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    sub_options.callback_group = cb_group_sub4;
+    joint_velocity_callback_group_ = control_callback_group_;
+    sub_options.callback_group = joint_velocity_callback_group_;
     joint_velocity_command_sub_ = create_subscription<std_msgs::msg::Float64MultiArray>("/ur_rtde/controllers/joint_velocity_controller/command",
-                                    1, std::bind(&RTDEController::jointVelocityCallback, this, std::placeholders::_1),sub_options);
+                                    command_qos, std::bind(&RTDEController::jointVelocityCallback, this, std::placeholders::_1),sub_options);
     
     
-    auto cb_group_sub5 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    sub_options.callback_group = cb_group_sub5;
+    cartesian_velocity_callback_group_ = control_callback_group_;
+    sub_options.callback_group = cartesian_velocity_callback_group_;
     cartesian_velocity_command_sub_ = create_subscription<geometry_msgs::msg::Twist>("/ur_rtde/controllers/cartesian_velocity_controller/command",
-                                        1, std::bind(&RTDEController::cartesianVelocityCallback, this, std::placeholders::_1),sub_options);
+                                        command_qos, std::bind(&RTDEController::cartesianVelocityCallback, this, std::placeholders::_1),sub_options);
 	
     
-    auto cb_group_sub6 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    sub_options.callback_group = cb_group_sub6;
+    digital_io_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    sub_options.callback_group = digital_io_callback_group_;
     digital_io_set_sub_	= create_subscription<std_msgs::msg::Int8>("/ur_rtde/digitalIO/command", 1,
                             std::bind(&RTDEController::digitalIOSetCallback, this, std::placeholders::_1),sub_options);
     
     
-    auto cb_group_sub7 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    sub_options.callback_group = cb_group_sub7;
+    tool_digital_io_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    sub_options.callback_group = tool_digital_io_callback_group_;
     tool_digital_io_set_sub_ = create_subscription<std_msgs::msg::Int8>("/ur_rtde/tool_digitalIO/command", 1,
                                 std::bind(&RTDEController::toolDigitalIOSetCallback, this, std::placeholders::_1),sub_options);
 
     // ROS - Service Servers
-    stop_robot_server_          = create_service<std_srvs::srv::Trigger>("/ur_rtde/controllers/stop_robot", std::bind(&RTDEController::stopRobotCallback, this,std::placeholders::_1, std::placeholders::_2));
-    set_async_parameter_server_ = create_service<std_srvs::srv::SetBool>("/ur_rtde/param/set_asynchronous", std::bind(&RTDEController::setAsyncParameterCallback, this,std::placeholders::_1, std::placeholders::_2));
-    start_FreedriveMode_server_ = create_service<ur_rtde_controller::srv::StartFreedriveMode>("/ur_rtde/FreedriveMode/start", std::bind(&RTDEController::startFreedriveModeCallback, this,std::placeholders::_1, std::placeholders::_2));
-    stop_FreedriveMode_server_  = create_service<std_srvs::srv::Trigger>("/ur_rtde/FreedriveMode/stop", std::bind(&RTDEController::stopFreedriveModeCallback, this,std::placeholders::_1, std::placeholders::_2));
-	zeroFT_sensor_server_ 		= create_service<std_srvs::srv::Trigger>("/ur_rtde/zeroFTSensor", std::bind(&RTDEController::zeroFTSensorCallback, this,std::placeholders::_1, std::placeholders::_2));
-    get_FK_server_              = create_service<ur_rtde_controller::srv::GetForwardKinematic>("/ur_rtde/getFK", std::bind(&RTDEController::getForwardKinematicCallback, this,std::placeholders::_1, std::placeholders::_2));
-    get_IK_server_              = create_service<ur_rtde_controller::srv::GetInverseKinematic>("/ur_rtde/getIK", std::bind(&RTDEController::getInverseKinematicCallback, this,std::placeholders::_1, std::placeholders::_2));
-    get_safety_status_server_   = create_service<ur_rtde_controller::srv::GetRobotStatus>("/ur_rtde/getSafetyStatus", std::bind(&RTDEController::getSafetyStatusCallback, this,std::placeholders::_1, std::placeholders::_2));
+    set_velocity_commands_server_ = create_service<std_srvs::srv::SetBool>(
+        "/ur_rtde/controllers/set_velocity_commands",
+        std::bind(&RTDEController::setVelocityCommandsCallback, this, std::placeholders::_1, std::placeholders::_2),
+        rclcpp::ServicesQoS(), control_callback_group_);
+    stop_robot_server_          = create_service<std_srvs::srv::Trigger>("/ur_rtde/controllers/stop_robot", std::bind(&RTDEController::stopRobotCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
+    set_async_parameter_server_ = create_service<std_srvs::srv::SetBool>("/ur_rtde/param/set_asynchronous", std::bind(&RTDEController::setAsyncParameterCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
+    start_FreedriveMode_server_ = create_service<ur_rtde_controller::srv::StartFreedriveMode>("/ur_rtde/FreedriveMode/start", std::bind(&RTDEController::startFreedriveModeCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
+    stop_FreedriveMode_server_  = create_service<std_srvs::srv::Trigger>("/ur_rtde/FreedriveMode/stop", std::bind(&RTDEController::stopFreedriveModeCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
+	zeroFT_sensor_server_ 		= create_service<std_srvs::srv::Trigger>("/ur_rtde/zeroFTSensor", std::bind(&RTDEController::zeroFTSensorCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
+    get_FK_server_              = create_service<ur_rtde_controller::srv::GetForwardKinematic>("/ur_rtde/getFK", std::bind(&RTDEController::getForwardKinematicCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
+    get_IK_server_              = create_service<ur_rtde_controller::srv::GetInverseKinematic>("/ur_rtde/getIK", std::bind(&RTDEController::getInverseKinematicCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
+    get_safety_status_server_   = create_service<ur_rtde_controller::srv::GetRobotStatus>("/ur_rtde/getSafetyStatus", std::bind(&RTDEController::getSafetyStatusCallback, this,std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
 
     rclcpp::sleep_for(std::chrono::seconds(1));
     std::cout << std::endl;
@@ -176,24 +187,158 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
 
 RTDEController::~RTDEController()
 {
-    // Stop Robot
-    stopRobot();
+    // spinner() has returned and its executor threads have joined before destruction.
+    try
+    {
+        if (rtde_control_ && rtde_control_->isConnected())
+        {
+            if (rtde_control_->isProgramRunning())
+            {
+                if (motion_mode_ == MotionMode::JointVelocity || motion_mode_ == MotionMode::CartesianVelocity ||
+                    motion_mode_ == MotionMode::Trajectory) { rtde_control_->speedStop(2.0); }
+                else if (motion_mode_ == MotionMode::Freedrive) { rtde_control_->endFreedriveMode(); }
+                else if (motion_mode_ == MotionMode::CartesianGoal) { rtde_control_->stopL(2.0); }
+                else if (motion_mode_ == MotionMode::JointGoal) { rtde_control_->stopJ(2.0); }
+            }
+            rtde_control_->disconnect();
+        }
+    }
+    catch (const std::exception & error)
+    {
+        RCLCPP_ERROR(get_logger(), "RTDE shutdown: %s", error.what());
+    }
+    delete robotiq_gripper_;
+    delete rtde_io_;
+    delete rtde_receive_;
+    delete rtde_control_;
+    delete rtde_dashboard_;
+}
 
-    // Disconnect RTDE Control Interface
-    rtde_control_ -> disconnect();
-    std::cout << std::endl;
-    RCLCPP_WARN(get_logger(), "UR RTDE Controller - Disconnected\n");
+bool RTDEController::motionBusy() const
+{
+    return motion_mode_ == MotionMode::Trajectory || motion_mode_ == MotionMode::JointGoal ||
+           motion_mode_ == MotionMode::CartesianGoal || motion_mode_ == MotionMode::Fault;
+}
+
+void RTDEController::publishMotionResult(bool success)
+{
+    if (!rclcpp::ok()) { return; }
+    std_msgs::msg::Bool result;
+    result.data = success;
+    trajectory_executed_pub_->publish(result);
+}
+
+void RTDEController::failMotion(const std::string & reason)
+{
+    velocity_commands_enabled_ = false;
+    motion_mode_ = MotionMode::Fault;
+    resetBooleans();
+    RCLCPP_ERROR(get_logger(), "%s Velocity commands remain disabled.", reason.c_str());
+    publishMotionResult(false);
+}
+
+bool RTDEController::stopVelocityAndFreedrive()
+{
+    try
+    {
+        if (!rtde_control_->isConnected() || !rtde_control_->isProgramRunning())
+        {
+            RCLCPP_ERROR(get_logger(), "Motion handoff refused: RTDE control is disconnected or its program is stopped.");
+            return false;
+        }
+        if ((motion_mode_ == MotionMode::JointVelocity || motion_mode_ == MotionMode::CartesianVelocity) &&
+            !rtde_control_->speedStop(2.0))
+        {
+            failMotion("Motion handoff failed: speedStop returned false.");
+            return false;
+        }
+        // Also exit freedrive started through the pendant, rather than only the ROS service.
+        if (!rtde_control_->endFreedriveMode())
+        {
+            failMotion("Motion handoff failed: endFreedriveMode returned false.");
+            return false;
+        }
+        motion_mode_ = MotionMode::Idle;
+        return true;
+    }
+    catch (const std::exception & error)
+    {
+        failMotion(std::string("Motion handoff failed: ") + error.what());
+        return false;
+    }
+}
+
+bool RTDEController::beginPositionMotion(MotionMode mode)
+{
+    velocity_commands_enabled_ = false;
+    if (motionBusy())
+    {
+        RCLCPP_ERROR(get_logger(), "Motion command rejected: another position/trajectory motion is active or the controller is faulted.");
+        return false;
+    }
+    if (!stopVelocityAndFreedrive()) { return false; }
+    motion_mode_ = mode;
+    return true;
+}
+
+bool RTDEController::setVelocityCommandsCallback(
+    const std_srvs::srv::SetBool::Request::SharedPtr request,
+    std_srvs::srv::SetBool::Response::SharedPtr response)
+{
+    try
+    {
+        if (!request->data)
+        {
+            // Close the gate before stopping the current mode; queued messages will be discarded.
+            velocity_commands_enabled_ = false;
+            response->success = !motionBusy() && stopVelocityAndFreedrive();
+            response->message = response->success ? "Velocity commands disabled; speed/freedrive stopped." :
+                                                   "Handoff refused; velocity commands remain disabled.";
+        }
+        else
+        {
+            response->success = motion_mode_ == MotionMode::Idle && rtde_control_->isConnected() &&
+                                rtde_control_->isProgramRunning();
+            if (response->success)
+            {
+                // These volatile messages were queued before the resume acknowledgement.
+                std_msgs::msg::Float64MultiArray joint_velocity;
+                geometry_msgs::msg::Twist cartesian_velocity;
+                rclcpp::MessageInfo info;
+                while (joint_velocity_command_sub_->take(joint_velocity, info)) {}
+                while (cartesian_velocity_command_sub_->take(cartesian_velocity, info)) {}
+                velocity_commands_enabled_ = true;
+            }
+            response->message = response->success ? "Velocity commands enabled." :
+                                                   "Cannot enable velocity commands while motion is active or control is unavailable.";
+        }
+    }
+    catch (const std::exception & error)
+    {
+        velocity_commands_enabled_ = false;
+        motion_mode_ = MotionMode::Fault;
+        response->success = false;
+        response->message = error.what();
+    }
+    RCLCPP_INFO(get_logger(), "%s", response->message.c_str());
+    return true;
 }
 
 // TODO: FIX Trajectory Function -> Doesn't Work with Dynamic Planner
 void RTDEController::jointTrajectoryCallback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
 {
+    if (motionBusy() || msg->points.empty())
+    {
+        RCLCPP_ERROR(get_logger(), "Trajectory rejected: empty input or another motion is active.");
+        return;
+    }
+    const auto actual_joint_position = rtde_receive_->getActualQ();
     // Initialize Error
     double err = 0.0;
 
     // Check if the Initial Point == Actual Joint Position
     for (uint i = 0; i < msg->points.begin()->positions.size(); i++)
-        err = std::max(std::fabs(msg->points.begin()->positions[i] - actual_joint_position_[i]), err);
+        err = std::max(std::fabs(msg->points.begin()->positions[i] - actual_joint_position[i]), err);
 
     // Return Error If Trajectory Starting Point != First Trajectory Point 
     if (err > SENSOR_ERROR) {RCLCPP_ERROR(get_logger(), "Trajectory Not Starting from the Actual Configuration.\n"); return;}
@@ -224,6 +369,7 @@ void RTDEController::jointTrajectoryCallback(const trajectory_msgs::msg::JointTr
         if (polynomial_fit_.evaluateMaxPolynomials(0.002) > JOINT_LIMITS || polynomial_fit_.evaluateMaxPolynomialsDer(0.002) > JOINT_VELOCITY_MAX || polynomial_fit_.evaluateMaxPolynomialsDDer(0.002) > JOINT_ACCELERATION_MAX)
             {RCLCPP_ERROR(get_logger(), "ERROR: Joint Limit Not Satisfied.\n"); return;}
 
+        if (!beginPositionMotion(MotionMode::Trajectory)) { return; }
         // New Trajectory Received
         trajectory_time_ = 0.0;
         new_trajectory_received_ = true;
@@ -239,9 +385,11 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::msg::JointTrajecto
     if (durationToSec(msg->time_from_start) == 0 && msg->velocities.size() == 0) {RCLCPP_ERROR(get_logger(), "ERROR: Desired Time = 0\n"); return;}
     else if (durationToSec(msg->time_from_start) == 0 && msg->velocities[0] <= 0.0) {RCLCPP_ERROR(get_logger(), "ERROR: Desired Time = 0 | Desired Velocity <= 0\n"); return;}
 
+    if (motionBusy()) { RCLCPP_ERROR(get_logger(), "Joint goal rejected: another motion is active."); return; }
+    const auto actual_joint_position = rtde_receive_->getActualQ();
     // Get Desired and Actual Joint Pose
     Eigen::VectorXd desired_pose = Eigen::VectorXd::Map(msg->positions.data(), msg->positions.size());
-    Eigen::VectorXd actual_pose  = Eigen::VectorXd::Map(actual_joint_position_.data(), actual_joint_position_.size());
+    Eigen::VectorXd actual_pose  = Eigen::Map<const Eigen::VectorXd>(actual_joint_position.data(), actual_joint_position.size());
 
     // Check Joint Limits
     if (!rtde_control_ -> isJointsWithinSafetyLimits(msg->positions)) {RCLCPP_ERROR(get_logger(), "ERROR: Received Joint Position Outside Safety Limits\n"); return;}
@@ -273,43 +421,102 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::msg::JointTrajecto
     // Check Velocity Limits
     if (velocity > JOINT_VELOCITY_MAX) {RCLCPP_ERROR(get_logger(), "Requested Velocity > Maximum Velocity\n"); return;}
 
-    // Move to Joint Goal
-    rtde_control_ -> moveJ(msg->positions, velocity, acceleration, asynchronous_);
-
-    // Publish Trajectory Executed
-    if (!asynchronous_) publishTrajectoryExecuted();
-    else new_async_joint_pose_received_ = true;
+    if (!beginPositionMotion(MotionMode::JointGoal)) { return; }
+    try
+    {
+        if (!rtde_control_->moveJ(msg->positions, velocity, acceleration, asynchronous_))
+        {
+            failMotion("Joint moveJ returned false.");
+            return;
+        }
+        if (!asynchronous_) { publishTrajectoryExecuted(); }
+        else { new_async_joint_pose_received_ = true; }
+    }
+    catch (const std::exception & error) { failMotion(error.what()); }
 }
 
 void RTDEController::cartesianGoalCallback(const ur_rtde_controller::msg::CartesianPoint::SharedPtr msg)
 {
-    // Convert Geometry Pose to RTDE Pose
-    std::vector<double> desired_pose = Pose2RTDE(msg->cartesian_pose);
-
-    // Check Pose Limits
-    if (!rtde_control_ -> isPoseWithinSafetyLimits(desired_pose)) {RCLCPP_ERROR(get_logger(), "ERROR: Received Cartesian Position Outside Safety Limits\n"); return;}
-
-    // TODO: Convert Desired Time to Velocity
-
-    // Check Tool Velocity Limits
-    if (msg->velocity > TOOL_VELOCITY_MAX) {RCLCPP_ERROR(get_logger(), "Requested Velocity > Maximum Velocity\n"); return;}
-
-    // Move to Linear Goal
-    rtde_control_ -> moveL(desired_pose, msg->velocity, 1.20, asynchronous_);
-
-    // Publish Trajectory Executed
-    if (!asynchronous_) publishTrajectoryExecuted();
-    else new_async_cartesian_pose_received_ = true;
+    auto pose = msg->cartesian_pose;
+    Eigen::Quaterniond orientation(pose.orientation.w, pose.orientation.x,
+                                   pose.orientation.y, pose.orientation.z);
+    if (!std::isfinite(pose.position.x) || !std::isfinite(pose.position.y) ||
+        !std::isfinite(pose.position.z) || !orientation.coeffs().allFinite() ||
+        !std::isfinite(orientation.norm()) || orientation.norm() < 1e-12)
+    {
+        RCLCPP_ERROR(get_logger(), "Cartesian goal rejected: invalid position or quaternion.");
+        publishMotionResult(false);
+        return;
+    }
+    if (!std::isfinite(msg->velocity) || msg->velocity <= TOOL_VELOCITY_MIN ||
+        msg->velocity > TOOL_VELOCITY_MAX)
+    {
+        RCLCPP_ERROR(get_logger(), "Cartesian goal rejected: velocity must be in (0, %.3f] m/s.",
+                     static_cast<double>(TOOL_VELOCITY_MAX));
+        publishMotionResult(false);
+        return;
+    }
+    orientation.normalize();
+    pose.orientation.w = orientation.w();
+    pose.orientation.x = orientation.x();
+    pose.orientation.y = orientation.y();
+    pose.orientation.z = orientation.z();
+    const auto desired_pose = Pose2RTDE(pose);
+    const bool asynchronous = asynchronous_;
+    RCLCPP_INFO(get_logger(),
+        "Cartesian goal received: xyz=[%.6f, %.6f, %.6f], rotation-vector=[%.6f, %.6f, %.6f], velocity=%.3f, asynchronous=%s",
+        desired_pose[0], desired_pose[1], desired_pose[2], desired_pose[3], desired_pose[4],
+        desired_pose[5], msg->velocity, asynchronous ? "true" : "false");
+    try
+    {
+        if (!rtde_control_->isConnected() || !rtde_control_->isProgramRunning())
+        {
+            RCLCPP_ERROR(get_logger(), "Cartesian goal rejected: RTDE control is disconnected or its robot program is not running.");
+            publishMotionResult(false);
+            return;
+        }
+        if (!rtde_control_->isPoseWithinSafetyLimits(desired_pose))
+        {
+            RCLCPP_ERROR(get_logger(), "Cartesian goal rejected: pose outside robot safety limits.");
+            publishMotionResult(false);
+            return;
+        }
+        if (!beginPositionMotion(MotionMode::CartesianGoal))
+        {
+            publishMotionResult(false);
+            return;
+        }
+        RCLCPP_INFO(get_logger(), "Cartesian motion owns control; velocity commands are disabled.");
+        if (!rtde_control_->moveL(desired_pose, msg->velocity, 1.20, asynchronous))
+        {
+            failMotion("Cartesian moveL returned false.");
+            return;
+        }
+        RCLCPP_INFO(get_logger(), "Cartesian moveL %s.", asynchronous ? "accepted asynchronously" : "completed");
+        if (!asynchronous) publishTrajectoryExecuted();
+        else new_async_cartesian_pose_received_ = true;
+    }
+    catch (const std::exception & error)
+    {
+        failMotion(std::string("Cartesian moveL failed: ") + error.what());
+    }
 }
 
 void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
 {
+    if (!velocity_commands_enabled_ || motionBusy() || motion_mode_ == MotionMode::Freedrive) { return; }
+    if (motion_mode_ == MotionMode::CartesianVelocity && !rtde_control_->speedStop(2.0))
+    {
+        failMotion("Could not stop the previous velocity mode.");
+        return;
+    }
+
     // Check Input Data Size
     if (msg->data.size() != 6) {RCLCPP_ERROR(get_logger(), "ERROR: Received Joint Velocity Size != 6\n"); return;}
 
     // Get Current and Desired Joint Velocity
     std::vector<double> desired_velocity = msg->data;
-    std::vector<double> current_velocity = actual_joint_velocity_;
+    std::vector<double> current_velocity = rtde_receive_->getActualQd();
 
     // // Compute Velocity Difference
     Eigen::VectorXd velocity_difference = Eigen::VectorXd::Map(desired_velocity.data(), desired_velocity.size()) 
@@ -327,11 +534,27 @@ void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArra
                                                               acceleration = JOINT_ACCELERATION_MAX;}
 
     // Joint Velocity Publisher
-    rtde_control_ -> speedJ(desired_velocity, acceleration,0.0001); // Use a Small Sleep Time to Avoid RTDE Control Timeout
+    try
+    {
+        if (!rtde_control_->speedJ(desired_velocity, acceleration, 0.0001))
+        {
+            failMotion("speedJ returned false.");
+            return;
+        }
+        motion_mode_ = MotionMode::JointVelocity;
+    }
+    catch (const std::exception & error) { failMotion(error.what()); }
 }
 
 void RTDEController::cartesianVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
+    if (!velocity_commands_enabled_ || motionBusy() || motion_mode_ == MotionMode::Freedrive) { return; }
+    if (motion_mode_ == MotionMode::JointVelocity && !rtde_control_->speedStop(2.0))
+    {
+        failMotion("Could not stop the previous velocity mode.");
+        return;
+    }
+
     // Get Current Cartesian Velocity
     std::vector<double> current_velocity = rtde_receive_ -> getActualTCPSpeed();
 
@@ -354,7 +577,16 @@ void RTDEController::cartesianVelocityCallback(const geometry_msgs::msg::Twist::
     if (acceleration > TOOL_ACCELERATION_MAX) {RCLCPP_ERROR(get_logger(), "Requested Acceleration > Maximum Acceleration\n"); return;}
 
     // Cartesian Velocity Publisher
-    rtde_control_ -> speedL(desired_cartesian_velocity, acceleration, 0.002);
+    try
+    {
+        if (!rtde_control_->speedL(desired_cartesian_velocity, acceleration, 0.002))
+        {
+            failMotion("speedL returned false.");
+            return;
+        }
+        motion_mode_ = MotionMode::CartesianVelocity;
+    }
+    catch (const std::exception & error) { failMotion(error.what()); }
 }
 
 void RTDEController::digitalIOSetCallback(const std_msgs::msg::Int8::SharedPtr msg)
@@ -414,7 +646,9 @@ bool RTDEController::startFreedriveModeCallback(const std::shared_ptr<ur_rtde_co
     // freeAxes: A 6 dimensional vector that contains 0’s and 1’s, these indicates in which axes movement is allowed. The first three values represents the cartesian directions along x, y, z, and the last three defines the rotation axis, rx, ry, rz. All relative to the selected feature
 
     // Start FreeDrive Mode
-    response->success = rtde_control_ -> freedriveMode(request->free_axes);
+    if (!beginPositionMotion(MotionMode::Freedrive)) { response->success = false; return true; }
+    response->success = rtde_control_->freedriveMode(request->free_axes);
+    if (!response->success) { failMotion("Could not start freedrive."); }
     return true;
 }
 
@@ -422,7 +656,8 @@ bool RTDEController::stopFreedriveModeCallback(const std::shared_ptr<std_srvs::s
 {
     // Exit from FreeDrive Mode
     auto req = request;
-    response->success = rtde_control_ -> endFreedriveMode();
+    response->success = rtde_control_->endFreedriveMode();
+    if (response->success && motion_mode_ == MotionMode::Freedrive) { motion_mode_ = MotionMode::Idle; }
     return true;
 }
 
@@ -575,7 +810,7 @@ bool RTDEController::enableRobotiQGripperCallback(const std::shared_ptr<std_srvs
     robotiq_gripper_ -> activate();
 
     // Create the Gripper Service Server if Doesn't Exist
-    if (robotiq_gripper_server_ == nullptr) robotiq_gripper_server_ = create_service<ur_rtde_controller::srv::RobotiQGripperControl>("/ur_rtde/robotiq_gripper/command", std::bind(&RTDEController::RobotiQGripperCallback, this, std::placeholders::_1, std::placeholders::_2));
+    if (robotiq_gripper_server_ == nullptr) robotiq_gripper_server_ = create_service<ur_rtde_controller::srv::RobotiQGripperControl>("/ur_rtde/robotiq_gripper/command", std::bind(&RTDEController::RobotiQGripperCallback, this, std::placeholders::_1, std::placeholders::_2), rclcpp::ServicesQoS(), control_callback_group_);
 
     response->success = true;
     return true;
@@ -669,9 +904,8 @@ void RTDEController::resetBooleans()
 void RTDEController::publishTrajectoryExecuted()
 {
     // Publish Trajectory Executed Message
-    std_msgs::msg::Bool trajectory_executed;
-    trajectory_executed.data = true;
-    trajectory_executed_pub_ -> publish(trajectory_executed);
+    motion_mode_ = MotionMode::Idle;
+    publishMotionResult(true);
 
     // Reset Booleans Variables
     resetBooleans();
@@ -766,7 +1000,8 @@ bool RTDEController::isPoseReached(Eigen::VectorXd position_error, double moveme
 bool RTDEController::isJointReached()
 {
     // Compute Joint Error
-    Eigen::VectorXd error = polynomial_fit_.getLastPoint() - Eigen::Map<Eigen::VectorXd>(actual_joint_position_.data(), actual_joint_position_.size());
+    const auto actual_joint_position = rtde_receive_->getActualQ();
+    Eigen::VectorXd error = polynomial_fit_.getLastPoint() - Eigen::Map<const Eigen::VectorXd>(actual_joint_position.data(), actual_joint_position.size());
     if (error.cwiseAbs().maxCoeff() < SENSOR_ERROR && trajectory_time_ > polynomial_fit_.getFinalTime()) return true;
     else return false;
 }
@@ -780,7 +1015,7 @@ void RTDEController::moveTrajectory()
     if (isJointReached())
     {
         // Stop Speed Mode
-        rtde_control_ -> speedStop();
+        if (!rtde_control_->speedStop(2.0)) { failMotion("Could not stop trajectory speed mode."); return; }
 
         // Publish Trajectory Executed
         publishTrajectoryExecuted();
@@ -790,14 +1025,19 @@ void RTDEController::moveTrajectory()
 
     // Create the Desired Velocity Vector
     Eigen::VectorXd trajectory_vel = polynomial_fit_.evaluatePolynomialsDer(trajectory_time_);
-    trajectory_vel += (polynomial_fit_.evaluatePolynomials(trajectory_time_) - Eigen::Map<Eigen::VectorXd>(actual_joint_position_.data(), actual_joint_position_.size()));
+    const auto actual_joint_position = rtde_receive_->getActualQ();
+    trajectory_vel += (polynomial_fit_.evaluatePolynomials(trajectory_time_) - Eigen::Map<const Eigen::VectorXd>(actual_joint_position.data(), actual_joint_position.size()));
     std::vector<double> desired_velocity(trajectory_vel.data(), trajectory_vel.data() + trajectory_vel.size());
 
     // Create the Desired Acceleration Vector
     Eigen::VectorXd acc = polynomial_fit_.evaluatePolynomialsDDer(trajectory_time_);
 
     // Move Robot with Velocity Commands
-    rtde_control_ -> speedJ(desired_velocity, (acc.cwiseAbs()).maxCoeff(), 5e-4);
+    if (!rtde_control_->speedJ(desired_velocity, (acc.cwiseAbs()).maxCoeff(), 5e-4))
+    {
+        failMotion("Trajectory speedJ returned false.");
+        return;
+    }
 
     // Increase trajectory_time_
     trajectory_time_ += 0.002;
@@ -809,13 +1049,19 @@ void RTDEController::checkAsyncMovements()
     if (!new_async_joint_pose_received_ and !new_async_cartesian_pose_received_) return;
 
     // Check if Async Operation is Ended -> Trajectory Executed
-    if (rtde_control_ -> getAsyncOperationProgress() < 0) publishTrajectoryExecuted();
+    if (!rtde_control_->isProgramRunning()) { failMotion("RTDE program stopped during asynchronous motion."); return; }
+    if (!rtde_control_->getAsyncOperationProgressEx().isAsyncOperationRunning()) { publishTrajectoryExecuted(); }
 }
 
 void RTDEController::stopRobot()
 {
-    // Stop Robot
-    rtde_control_ -> stopJ(2.0);
+    velocity_commands_enabled_ = false;
+    if (motion_mode_ == MotionMode::JointVelocity || motion_mode_ == MotionMode::CartesianVelocity ||
+        motion_mode_ == MotionMode::Trajectory) { rtde_control_->speedStop(2.0); }
+    else if (motion_mode_ == MotionMode::Freedrive) { rtde_control_->endFreedriveMode(); }
+    else if (motion_mode_ == MotionMode::CartesianGoal) { rtde_control_->stopL(2.0); }
+    else { rtde_control_->stopJ(2.0); }
+    motion_mode_ = MotionMode::Idle;
 
     // Wait
     rclcpp::sleep_for(std::chrono::milliseconds(100));
@@ -835,9 +1081,10 @@ void RTDEController::checkRobotStatus()
     bool eStop = false, protectiveStop = false;
 
     // Print Robot Emergency and Protective Stop
-    while (rtde_receive_ -> isEmergencyStopped())  {RCLCPP_WARN_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "EMERGENCY STOP PRESSED"); eStop = true;}
-    while (rtde_receive_ -> isProtectiveStopped()) {RCLCPP_WARN_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "PROTECTIVE STOP");         protectiveStop = true;}
+    while (rclcpp::ok() && rtde_receive_ -> isEmergencyStopped())  {RCLCPP_WARN_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "EMERGENCY STOP PRESSED"); eStop = true;}
+    while (rclcpp::ok() && rtde_receive_ -> isProtectiveStopped()) {RCLCPP_WARN_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "PROTECTIVE STOP");         protectiveStop = true;}
 
+    if (!rclcpp::ok()) { return; }
     // Check Flags
     if (eStop)
     {
@@ -845,7 +1092,7 @@ void RTDEController::checkRobotStatus()
         RCLCPP_WARN(get_logger(), "EMERGENCY STOP RELEASED\n");
 
         // Check if Robot Mode is ROBOT_MODE_RUNNING
-        while (rtde_receive_ -> getRobotMode() != ROBOT_MODE_RUNNING) {RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "Wait for Robot Recovery...");}
+        while (rclcpp::ok() && rtde_receive_ -> getRobotMode() != ROBOT_MODE_RUNNING) {RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, "Wait for Robot Recovery...");}
     
     } else if (protectiveStop) {RCLCPP_WARN(get_logger(), "PROTECTIVE STOP RECOVERED\n");}
         
@@ -863,6 +1110,8 @@ void RTDEController::checkRobotStatus()
         std::cout << std::endl;
         RCLCPP_WARN(get_logger(), "Robot Ready to Receive New Commands\n");
 
+        velocity_commands_enabled_ = false;
+        motion_mode_ = MotionMode::Idle;
         // Reset Booleans
         resetBooleans();
     }
@@ -873,14 +1122,22 @@ void RTDEController::checkRobotStatus()
 
 void RTDEController::checkRobot()
 {
-    // Check UR Status
-    checkRobotStatus();
+    try
+    {
+        // Check UR Status
+        checkRobotStatus();
 
-    // Trajectory Controller
-    moveTrajectory();
+        if (!rclcpp::ok()) { return; }
+        // Trajectory Controller
+        moveTrajectory();
 
-    // Check Async Movements Status
-    checkAsyncMovements();
+        // Check Async Movements Status
+        checkAsyncMovements();
+    }
+    catch (const std::exception & error)
+    {
+        if (rclcpp::ok()) { failMotion(error.what()); }
+    }
 }
 
 void RTDEController::spinner()
@@ -889,17 +1146,17 @@ void RTDEController::spinner()
     executor.add_node(this->get_node_base_interface());
 
     // Add timers
-    auto cb_group_timer1 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    jointState_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishJointState, this), cb_group_timer1);
+    joint_state_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    jointState_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishJointState, this), joint_state_callback_group_);
 
-    auto cb_group_timer2 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    tcpPose_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishTCPPose, this), cb_group_timer2);
+    tcp_pose_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    tcpPose_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishTCPPose, this), tcp_pose_callback_group_);
 
-    auto cb_group_timer3 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    force_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishFTSensor, this), cb_group_timer3);
+    force_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    force_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::publishFTSensor, this), force_callback_group_);
 
-    auto cb_group_timer4 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    checkRobot_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::checkRobot, this), cb_group_timer4);
+    robot_check_callback_group_ = control_callback_group_;
+    checkRobot_timer_ = create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000./rate_)), std::bind(&RTDEController::checkRobot, this), robot_check_callback_group_);
 
     // Spin the Executor
     executor.spin();
@@ -914,65 +1171,24 @@ void RTDEController::spinner()
 // std::thread *publishTCPPose    = nullptr;
 // std::thread *publishFTSensor   = nullptr;
 
-void signalHandler(int signal)
+int main(int argc, char **argv)
 {
-    std::cout << "\nKeyboard Interrupt Received\n";
-
-    // Set Shutdown Trigger
-    // rtde -> shutdown_ = true;
-
-    // Join Threads on Main
-    // publishJointState -> join();
-    // publishTCPPose    -> join();
-    // publishFTSensor   -> join();
-
-    // Call Destructor
-    // delete rtde;
-    exit(signal);
-
-    rclcpp::shutdown();
-}
-
-int main(int argc, char **argv) {
-
-    // Initialize ROS
     rclcpp::init(argc, argv);
-
-    // Create a SIGINT Handler
-    struct sigaction sa;
-    sa.sa_handler = signalHandler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sigaction(SIGINT, &sa, NULL);
-    std::cout << std::endl;
-
-    // Create a New RTDEController
-    auto rtde = std::make_shared<RTDEController>();
-    // rtde = new RTDEController();
-
-    // Publish JointState, TCPPose, FTSensor in separate Threads
-    // publishJointState = new std::thread(&RTDEController::publishJointState, rtde);
-    // publishTCPPose    = new std::thread(&RTDEController::publishTCPPose,    rtde);
-    // publishFTSensor   = new std::thread(&RTDEController::publishFTSensor,   rtde);
-    // rclcpp::sleep_for(std::chrono::seconds(1));
-
-    // Main Spinner
-    rtde->spinner();
-
-    // Set Shutdown Trigger
-    // rtde -> shutdown_ = true;
-
-    // Join Threads on Main
-    // publishJointState -> join();
-    // publishTCPPose    -> join();
-    // publishFTSensor   -> join();
-
-    // Call Destructor
-    // delete rtde;
-
-    // Shutdown ROS
+    try
+    {
+        auto rtde = std::make_shared<RTDEController>();
+        rtde->spinner();
+        rtde.reset();
+    }
+    catch (const std::exception & error)
+    {
+        if (rclcpp::ok())
+        {
+            RCLCPP_ERROR(rclcpp::get_logger("ur_rtde_controller"), "%s", error.what());
+            rclcpp::shutdown();
+            return 1;
+        }
+    }
     rclcpp::shutdown();
-
     return 0;
-
 }
