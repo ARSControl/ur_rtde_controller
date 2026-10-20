@@ -13,6 +13,7 @@ def create_example_node():
         'limit_acc':      LaunchConfiguration('limit_acc'),
         'ft_sensor':      LaunchConfiguration('ft_sensor'),
         'rate':           LaunchConfiguration('rate'),
+        'velocity_command_timeout': LaunchConfiguration('velocity_command_timeout'),
     }
 
     # Python Node + Parameters + YAML Config File
@@ -38,6 +39,9 @@ def generate_launch_description():
     limit_acc_arg      = DeclareLaunchArgument('limit_acc',      default_value='true')
     ft_sensor_arg      = DeclareLaunchArgument('ft_sensor',      default_value='true')
     rate_arg           = DeclareLaunchArgument('rate',           default_value='500.0')
+    velocity_command_timeout_arg = DeclareLaunchArgument(
+        'velocity_command_timeout', default_value='0.05',
+        description='Maximum gap between successful velocity commands, in seconds; faults require controller restart.')
 
     # Launch Description - Add Arguments
     launch_description.add_action(ROBOT_IP_arg)
@@ -46,6 +50,7 @@ def generate_launch_description():
     launch_description.add_action(limit_acc_arg)
     launch_description.add_action(ft_sensor_arg)
     launch_description.add_action(rate_arg)
+    launch_description.add_action(velocity_command_timeout_arg)
 
     # Launch Description - Add Nodes
     launch_description.add_action(create_example_node())

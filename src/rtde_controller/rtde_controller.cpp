@@ -22,6 +22,10 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     declare_parameter<bool>("limit_acc", false);
     declare_parameter<bool>("ft_sensor", true);
     declare_parameter<double>("rate", 500.0);
+    rcl_interfaces::msg::ParameterDescriptor timing_descriptor;
+    timing_descriptor.read_only = true;
+    const double velocity_command_timeout = declare_parameter<double>(
+        "velocity_command_timeout", 0.05, timing_descriptor);
 
     // Load Parameters
     if(!get_parameter_or("ROBOT_IP", ROBOT_IP, std::string("192.168.2.30"))) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"ROBOT_IP\" Param. Using Default: " << ROBOT_IP);}
@@ -30,6 +34,8 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     if(!get_parameter_or("limit_acc", limit_acc_, false)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"limit_acc\" Param. Using Default: " << limit_acc_);}
     if(!get_parameter_or("ft_sensor", ft_sensor_, true)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"ft_sensor\" Param. Using Default: " << ft_sensor_);}
     if(!get_parameter_or("rate", rate_, 500.0)) {RCLCPP_ERROR_STREAM(get_logger(), "Failed To Get \"rate\" Param. Using Default: " << rate_);}
+    // Validate before constructing any interfaces that can contact the robot.
+    velocity_watchdog_ = VelocityCommandWatchdog(velocity_command_timeout, rate_);
 
     // Log Parameters
     std::ostringstream oss; oss << std::boolalpha;
@@ -38,7 +44,8 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     oss << "Asynchronous:       " << asynchronous_ << "\n";
     oss << "Limit Acceleration: " << limit_acc_ << "\n";
     oss << "FT Sensor:          " << ft_sensor_ << "\n";
-    oss << "Rate:               " << rate_ << " Hz";
+    oss << "Rate:               " << rate_ << " Hz\n";
+    oss << "Velocity command timeout: " << velocity_watchdog_.timeout() << " s";
     RCLCPP_INFO(get_logger(), "%s", oss.str().c_str());
 
     // Initialize Robot
@@ -216,7 +223,7 @@ RTDEController::~RTDEController()
 
 bool RTDEController::motionBusy() const
 {
-    return motion_mode_ == MotionMode::Trajectory || motion_mode_ == MotionMode::JointGoal ||
+    return velocity_watchdog_fault_ || motion_mode_ == MotionMode::Trajectory || motion_mode_ == MotionMode::JointGoal ||
            motion_mode_ == MotionMode::CartesianGoal || motion_mode_ == MotionMode::Fault;
 }
 
@@ -231,10 +238,29 @@ void RTDEController::publishMotionResult(bool success)
 void RTDEController::failMotion(const std::string & reason)
 {
     velocity_commands_enabled_ = false;
+    velocity_watchdog_.reset();
     motion_mode_ = MotionMode::Fault;
     resetBooleans();
     RCLCPP_ERROR(get_logger(), "%s Velocity commands remain disabled.", reason.c_str());
     publishMotionResult(false);
+}
+
+bool RTDEController::checkVelocityCommandWatchdog()
+{
+    const bool velocity_mode = velocity_commands_enabled_ &&
+        (motion_mode_ == MotionMode::JointVelocity || motion_mode_ == MotionMode::CartesianVelocity);
+    if (!velocity_watchdog_.expired(VelocityCommandWatchdog::Clock::now(), velocity_mode))
+        return !velocity_watchdog_fault_;
+
+    // Close the gate before stopping, retaining the current mode for speedStop.
+    velocity_commands_enabled_ = false;
+    velocity_watchdog_fault_ = true;
+    const bool stopped = stopVelocityAndFreedrive();
+    failMotion(std::string("Velocity command watchdog expired after ") +
+        std::to_string(velocity_watchdog_.timeout()) +
+        " s; restart the controller before resuming." +
+        (stopped ? "" : " Controlled stop was not acknowledged."));
+    return false;
 }
 
 bool RTDEController::stopVelocityAndFreedrive()
@@ -259,6 +285,7 @@ bool RTDEController::stopVelocityAndFreedrive()
             return false;
         }
         motion_mode_ = MotionMode::Idle;
+        velocity_watchdog_.reset();
         return true;
     }
     catch (const std::exception & error)
@@ -271,6 +298,7 @@ bool RTDEController::stopVelocityAndFreedrive()
 bool RTDEController::beginPositionMotion(MotionMode mode)
 {
     velocity_commands_enabled_ = false;
+    velocity_watchdog_.reset();
     if (motionBusy())
     {
         RCLCPP_ERROR(get_logger(), "Motion command rejected: another position/trajectory motion is active or the controller is faulted.");
@@ -291,13 +319,14 @@ bool RTDEController::setVelocityCommandsCallback(
         {
             // Close the gate before stopping the current mode; queued messages will be discarded.
             velocity_commands_enabled_ = false;
+            velocity_watchdog_.reset();
             response->success = !motionBusy() && stopVelocityAndFreedrive();
             response->message = response->success ? "Velocity commands disabled; speed/freedrive stopped." :
                                                    "Handoff refused; velocity commands remain disabled.";
         }
         else
         {
-            response->success = motion_mode_ == MotionMode::Idle && rtde_control_->isConnected() &&
+            response->success = !velocity_watchdog_fault_ && motion_mode_ == MotionMode::Idle && rtde_control_->isConnected() &&
                                 rtde_control_->isProgramRunning();
             if (response->success)
             {
@@ -307,6 +336,7 @@ bool RTDEController::setVelocityCommandsCallback(
                 rclcpp::MessageInfo info;
                 while (joint_velocity_command_sub_->take(joint_velocity, info)) {}
                 while (cartesian_velocity_command_sub_->take(cartesian_velocity, info)) {}
+                velocity_watchdog_.reset();
                 velocity_commands_enabled_ = true;
             }
             response->message = response->success ? "Velocity commands enabled." :
@@ -504,6 +534,8 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::msg::Cartes
 
 void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
 {
+    // Inspect the old timestamp first: a late arrival must not hide a lost stream.
+    if (!checkVelocityCommandWatchdog()) { return; }
     if (!velocity_commands_enabled_ || motionBusy() || motion_mode_ == MotionMode::Freedrive) { return; }
     if (motion_mode_ == MotionMode::CartesianVelocity && !rtde_control_->speedStop(2.0))
     {
@@ -536,18 +568,23 @@ void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArra
     // Joint Velocity Publisher
     try
     {
+        // Feedback reads or switching out of speedL can block. Recheck the
+        // original successful-command time before sending or renewing speedJ.
+        if (!checkVelocityCommandWatchdog()) { return; }
         if (!rtde_control_->speedJ(desired_velocity, acceleration, 0.0001))
         {
             failMotion("speedJ returned false.");
             return;
         }
         motion_mode_ = MotionMode::JointVelocity;
+        velocity_watchdog_.successfulCommand(VelocityCommandWatchdog::Clock::now());
     }
     catch (const std::exception & error) { failMotion(error.what()); }
 }
 
 void RTDEController::cartesianVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
+    if (!checkVelocityCommandWatchdog()) { return; }
     if (!velocity_commands_enabled_ || motionBusy() || motion_mode_ == MotionMode::Freedrive) { return; }
     if (motion_mode_ == MotionMode::JointVelocity && !rtde_control_->speedStop(2.0))
     {
@@ -579,12 +616,16 @@ void RTDEController::cartesianVelocityCallback(const geometry_msgs::msg::Twist::
     // Cartesian Velocity Publisher
     try
     {
+        // Keep the old timestamp through feedback reads and speedJ-to-speedL
+        // stopping, so those delays cannot conceal an expired command gap.
+        if (!checkVelocityCommandWatchdog()) { return; }
         if (!rtde_control_->speedL(desired_cartesian_velocity, acceleration, 0.002))
         {
             failMotion("speedL returned false.");
             return;
         }
         motion_mode_ = MotionMode::CartesianVelocity;
+        velocity_watchdog_.successfulCommand(VelocityCommandWatchdog::Clock::now());
     }
     catch (const std::exception & error) { failMotion(error.what()); }
 }
@@ -1056,12 +1097,13 @@ void RTDEController::checkAsyncMovements()
 void RTDEController::stopRobot()
 {
     velocity_commands_enabled_ = false;
+    velocity_watchdog_.reset();
     if (motion_mode_ == MotionMode::JointVelocity || motion_mode_ == MotionMode::CartesianVelocity ||
         motion_mode_ == MotionMode::Trajectory) { rtde_control_->speedStop(2.0); }
     else if (motion_mode_ == MotionMode::Freedrive) { rtde_control_->endFreedriveMode(); }
     else if (motion_mode_ == MotionMode::CartesianGoal) { rtde_control_->stopL(2.0); }
     else { rtde_control_->stopJ(2.0); }
-    motion_mode_ = MotionMode::Idle;
+    motion_mode_ = velocity_watchdog_fault_ ? MotionMode::Fault : MotionMode::Idle;
 
     // Wait
     rclcpp::sleep_for(std::chrono::milliseconds(100));
@@ -1111,7 +1153,8 @@ void RTDEController::checkRobotStatus()
         RCLCPP_WARN(get_logger(), "Robot Ready to Receive New Commands\n");
 
         velocity_commands_enabled_ = false;
-        motion_mode_ = MotionMode::Idle;
+        velocity_watchdog_.reset();
+        motion_mode_ = velocity_watchdog_fault_ ? MotionMode::Fault : MotionMode::Idle;
         // Reset Booleans
         resetBooleans();
     }
@@ -1124,6 +1167,7 @@ void RTDEController::checkRobot()
 {
     try
     {
+        if (!checkVelocityCommandWatchdog()) { return; }
         // Check UR Status
         checkRobotStatus();
 

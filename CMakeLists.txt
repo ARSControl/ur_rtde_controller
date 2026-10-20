@@ -116,6 +116,9 @@ install(DIRECTORY
 )
 
 if(BUILD_TESTING)
+  enable_testing()
+  add_executable(test_velocity_command_watchdog test/test_velocity_command_watchdog.cpp)
+  add_test(NAME velocity_command_watchdog COMMAND test_velocity_command_watchdog)
   find_package(ament_lint_auto REQUIRED)
   #set(ament_cmake_copyright_FOUND TRUE)
   #set(ament_cmake_cpplint_FOUND TRUE)

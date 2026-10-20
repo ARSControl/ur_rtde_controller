@@ -35,6 +35,7 @@
 #include <Eigen/Dense>
 
 #include "polyfit/polyfit.h"
+#include "rtde_controller/velocity_command_watchdog.h"
 
 #define JOINT_LIMITS 6.28
 #define JOINT_VELOCITY_MAX 3.14
@@ -128,6 +129,8 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
                                 JointGoal, CartesianGoal, Freedrive, Fault };
         MotionMode motion_mode_ = MotionMode::Idle;
         bool velocity_commands_enabled_ = true;
+        VelocityCommandWatchdog velocity_watchdog_;
+        bool velocity_watchdog_fault_ = false;
 
         // ROS2 Publishers
         rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
@@ -208,6 +211,7 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         bool stopVelocityAndFreedrive();
         bool beginPositionMotion(MotionMode mode);
         void failMotion(const std::string & reason);
+        bool checkVelocityCommandWatchdog();
         void publishMotionResult(bool success);
 
         // Utilities Functions
