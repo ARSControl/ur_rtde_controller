@@ -1,3 +1,4 @@
+#include <arspain_interfaces/diagnostics.hpp>
 #ifndef RTDE_CONTROLLER_H
 #define RTDE_CONTROLLER_H
 
@@ -86,6 +87,8 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         double rate_;
 
     private:
+        std::shared_ptr<arspain_diagnostics::Observer> diagnostics_;
+        rclcpp::Subscription<arspain_interfaces::msg::DiagnosticSession>::SharedPtr diagnostic_request_;
 
         // Parameters
         std::string ROBOT_IP;

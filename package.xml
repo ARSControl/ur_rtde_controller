@@ -26,6 +26,7 @@
 
   <!-- ROS Dependancies -->
   <depend>rclcpp</depend>
+  <depend>arspain_interfaces</depend>
   <depend>rclpy</depend>
 
   <!-- LaunchFiles Dependancies -->

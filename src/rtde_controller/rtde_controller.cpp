@@ -48,6 +48,18 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
     oss << "Velocity command timeout: " << velocity_watchdog_.timeout() << " s";
     RCLCPP_INFO(get_logger(), "%s", oss.str().c_str());
 
+    // A recording request only enables observation. It never changes command routing.
+    const bool record_diagnostics=declare_parameter("record_run_diagnostics",false);
+    auto enable_diagnostics=[this] {
+        if(std::atomic_load(&diagnostics_))return;
+        try {std::atomic_store(&diagnostics_,std::make_shared<arspain_diagnostics::Observer>(this,"driver"));}
+        catch(const std::exception& e){RCLCPP_WARN(get_logger(),"Driver diagnostics unavailable: %s",e.what());}
+    };
+    if(record_diagnostics)enable_diagnostics();
+    diagnostic_request_=create_subscription<arspain_interfaces::msg::DiagnosticSession>(
+        "/uk_admittance_control/diagnostics/session",rclcpp::QoS(16).reliable().transient_local(),
+        [enable_diagnostics](arspain_interfaces::msg::DiagnosticSession::ConstSharedPtr m){if(m->role=="coordinator")enable_diagnostics();});
+
     // Initialize Robot
     while (rclcpp::ok() && !robot_initialized) {
 
@@ -214,6 +226,8 @@ RTDEController::~RTDEController()
     {
         RCLCPP_ERROR(get_logger(), "RTDE shutdown: %s", error.what());
     }
+    diagnostic_request_.reset();
+    std::atomic_store(&diagnostics_,std::shared_ptr<arspain_diagnostics::Observer>{});
     delete robotiq_gripper_;
     delete rtde_io_;
     delete rtde_receive_;
@@ -249,16 +263,19 @@ bool RTDEController::checkVelocityCommandWatchdog()
 {
     const bool velocity_mode = velocity_commands_enabled_ &&
         (motion_mode_ == MotionMode::JointVelocity || motion_mode_ == MotionMode::CartesianVelocity);
-    if (!velocity_watchdog_.expired(VelocityCommandWatchdog::Clock::now(), velocity_mode))
+    const auto checked_at = VelocityCommandWatchdog::Clock::now();
+    if (!velocity_watchdog_.expired(checked_at, velocity_mode))
         return !velocity_watchdog_fault_;
 
+    const double command_gap = velocity_watchdog_.commandAge(checked_at);
     // Close the gate before stopping, retaining the current mode for speedStop.
     velocity_commands_enabled_ = false;
     velocity_watchdog_fault_ = true;
     const bool stopped = stopVelocityAndFreedrive();
     failMotion(std::string("Velocity command watchdog expired after ") +
         std::to_string(velocity_watchdog_.timeout()) +
-        " s; restart the controller before resuming." +
+        " s (measured successful-command gap=" + std::to_string(command_gap) +
+        " s); restart the controller before resuming." +
         (stopped ? "" : " Controlled stop was not acknowledged."));
     return false;
 }
@@ -534,9 +551,17 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::msg::Cartes
 
 void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
 {
+    auto observer=std::atomic_load(&diagnostics_);
+    if(observer && !observer->commandsInterested())observer.reset();
+    arspain_diagnostics::Driver d;
+    if(observer){d.kind.set("joint_velocity");d.received_ns=arspain_diagnostics::monotonicNs();d.velocity_enabled=velocity_commands_enabled_;d.result.set("rejected_or_gated");
+      d.quality.set("Legacy Float64MultiArray: no exact controller command identity");if(msg->data.size()==6)std::copy(msg->data.begin(),msg->data.end(),d.command.begin());}
+    struct RecordOnExit {std::shared_ptr<arspain_diagnostics::Observer> observer;arspain_diagnostics::Driver& d;
+      ~RecordOnExit(){if(observer){if(!d.call_end_ns)d.call_end_ns=arspain_diagnostics::monotonicNs();observer->observation(d);}}} record_on_exit{observer,d};
+
     // Inspect the old timestamp first: a late arrival must not hide a lost stream.
-    if (!checkVelocityCommandWatchdog()) { return; }
-    if (!velocity_commands_enabled_ || motionBusy() || motion_mode_ == MotionMode::Freedrive) { return; }
+    if (!checkVelocityCommandWatchdog()) { if(observer)d.result.set("watchdog_rejected");return; }
+    if (!velocity_commands_enabled_ || motionBusy() || motion_mode_ == MotionMode::Freedrive) { if(observer)d.result.set("motion_or_velocity_gate");return; }
     if (motion_mode_ == MotionMode::CartesianVelocity && !rtde_control_->speedStop(2.0))
     {
         failMotion("Could not stop the previous velocity mode.");
@@ -544,7 +569,7 @@ void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArra
     }
 
     // Check Input Data Size
-    if (msg->data.size() != 6) {RCLCPP_ERROR(get_logger(), "ERROR: Received Joint Velocity Size != 6\n"); return;}
+    if (msg->data.size() != 6) {if(observer)d.result.set("invalid_size");RCLCPP_ERROR(get_logger(), "ERROR: Received Joint Velocity Size != 6\n"); return;}
 
     // Get Current and Desired Joint Velocity
     std::vector<double> desired_velocity = msg->data;
@@ -570,16 +595,19 @@ void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArra
     {
         // Feedback reads or switching out of speedL can block. Recheck the
         // original successful-command time before sending or renewing speedJ.
-        if (!checkVelocityCommandWatchdog()) { return; }
+        if (!checkVelocityCommandWatchdog()) { if(observer)d.result.set("watchdog_rejected");return; }
+        if(observer)d.call_begin_ns=arspain_diagnostics::monotonicNs();
         if (!rtde_control_->speedJ(desired_velocity, acceleration, 0.0001))
         {
+            if(observer){d.result.set("rtde_failed");d.call_end_ns=arspain_diagnostics::monotonicNs();}
             failMotion("speedJ returned false.");
             return;
         }
+        if(observer){d.call_end_ns=arspain_diagnostics::monotonicNs();d.result.set("rtde_accepted");}
         motion_mode_ = MotionMode::JointVelocity;
         velocity_watchdog_.successfulCommand(VelocityCommandWatchdog::Clock::now());
     }
-    catch (const std::exception & error) { failMotion(error.what()); }
+    catch (const std::exception & error) { if(observer){d.result.set("rtde_exception");d.call_end_ns=arspain_diagnostics::monotonicNs();}failMotion(error.what()); }
 }
 
 void RTDEController::cartesianVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
@@ -911,6 +939,25 @@ void RTDEController::publishTCPPose()
 
     // Publish TCP Pose
     tcp_pose_pub_ -> publish(actual_cartesian_pose_);
+    auto observer=std::atomic_load(&diagnostics_);
+    if(observer && observer->feedbackInterested()){
+      arspain_diagnostics::Driver d;d.kind.set("feedback");d.received_ns=arspain_diagnostics::monotonicNs();d.result.set("snapshot");
+      try {
+        d.robot_time_before=rtde_receive_->getTimestamp();
+        const auto q=rtde_receive_->getActualQ(),dq=rtde_receive_->getActualQd();
+        const auto pose=rtde_receive_->getActualTCPPose(),v=rtde_receive_->getActualTCPSpeed(),f=rtde_receive_->getActualTCPForce();
+        d.robot_time_after=rtde_receive_->getTimestamp();d.robot_time_available=true;
+        if(q.size()==6)std::copy(q.begin(),q.end(),d.position.begin());
+        if(dq.size()==6)std::copy(dq.begin(),dq.end(),d.velocity.begin());
+        if(pose.size()==6)std::copy(pose.begin(),pose.end(),d.tcp_pose_rotation_vector.begin());
+        if(v.size()==6)std::copy(v.begin(),v.end(),d.tcp_velocity.begin());
+        if(f.size()==6)std::copy(f.begin(),f.end(),d.wrench.begin());
+        d.wrench_frame.set("unverified RTDE getActualTCPForce frame; installation must specify");d.wrench_reference.set("RTDE TCP; verify configured TCP/payload/zero before port energy analysis");
+        d.quality.set("Independent cached getters; robot timestamps bracket sample skew; payload/gravity metadata unavailable");
+      }catch(const std::exception&){d.result.set("feedback_unavailable");d.quality.set("Getter failed; no coherent physical-port claim");}
+      d.call_end_ns=arspain_diagnostics::monotonicNs();observer->observation(d);
+    }
+
 }
 
 void RTDEController::publishFTSensor()

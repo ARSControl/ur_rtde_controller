@@ -22,6 +22,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(arspain_interfaces REQUIRED)
 find_package(rclpy REQUIRED)
 
 # Find Messages Dependencies
@@ -88,7 +89,7 @@ ament_export_dependencies(rosidl_default_runtime)
 
 # RTDE Controller - C++ Executables
 add_executable(rtde_controller src/rtde_controller/rtde_controller.cpp)
-ament_target_dependencies(rtde_controller rclcpp std_msgs sensor_msgs geometry_msgs trajectory_msgs std_srvs)
+ament_target_dependencies(rtde_controller arspain_interfaces rclcpp std_msgs sensor_msgs geometry_msgs trajectory_msgs std_srvs)
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_typesupport_cpp)
 target_link_libraries(rtde_controller "${cpp_typesupport_target}" ur_rtde::rtde polyfit_lib)
 

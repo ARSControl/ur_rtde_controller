@@ -7,6 +7,7 @@ def create_example_node():
 
     # Python Node - Parameters
     robot_parameters = {
+        'record_run_diagnostics': LaunchConfiguration('record_run_diagnostics'),
         'ROBOT_IP':       LaunchConfiguration('ROBOT_IP'),
         'enable_gripper': LaunchConfiguration('enable_gripper'),
         'asynchronous':   LaunchConfiguration('asynchronous'),
@@ -29,6 +30,8 @@ def generate_launch_description():
 
     # Launch Description
     launch_description = LaunchDescription()
+
+    launch_description.add_action(DeclareLaunchArgument("record_run_diagnostics", default_value="false",description="Observe legacy command and feedback timing; also enabled by the UK diagnostic coordinator"))
 
     # Robot Arguments
     # ROBOT_IP_arg       = DeclareLaunchArgument('ROBOT_IP',       default_value='192.168.137.102')   # UR5e DAL

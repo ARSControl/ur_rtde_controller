@@ -29,6 +29,7 @@
 #pragma once
 
 #include <chrono>
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <stdexcept>
@@ -57,6 +58,9 @@ public:
   }
   bool armed() const {return last_.has_value();}
   double timeout() const {return timeout_;}
+  double commandAge(Clock::time_point now) const {
+    return last_ ? std::max(0.0,std::chrono::duration<double>(now-*last_).count()) : 0.;
+  }
 
 private:
   double timeout_;
