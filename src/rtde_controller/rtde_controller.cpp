@@ -624,13 +624,9 @@ void RTDEController::cartesianVelocityCallback(const geometry_msgs::msg::Twist::
     std::vector<double> current_velocity = rtde_receive_ -> getActualTCPSpeed();
 
     // Create Desired Velocity Vector
-    std::vector<double> desired_cartesian_velocity;
-    desired_cartesian_velocity.push_back(msg->linear.x);
-    desired_cartesian_velocity.push_back(msg->linear.y);
-    desired_cartesian_velocity.push_back(msg->linear.z);
-    desired_cartesian_velocity.push_back(msg->angular.x);
-    desired_cartesian_velocity.push_back(msg->angular.y);
-    desired_cartesian_velocity.push_back(msg->angular.z);
+    std::vector<double> desired_cartesian_velocity{
+        msg->linear.x, msg->linear.y, msg->linear.z,
+        msg->angular.x, msg->angular.y, msg->angular.z};
 
     // TODO: Compute Velocity Difference
 
