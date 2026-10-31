@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 3.5)
 project(ur_rtde_controller)
 
-# Default to C99
+# Default to C17
 if(NOT CMAKE_C_STANDARD)
-  set(CMAKE_C_STANDARD 99)
+  set(CMAKE_C_STANDARD 17)
 endif()
 
-# Default to C++17
+# Lyrical C++ headers require C++20.
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD 20)
 endif()
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")
@@ -89,9 +89,12 @@ ament_export_dependencies(rosidl_default_runtime)
 
 # RTDE Controller - C++ Executables
 add_executable(rtde_controller src/rtde_controller/rtde_controller.cpp)
-ament_target_dependencies(rtde_controller arspain_interfaces rclcpp std_msgs sensor_msgs geometry_msgs trajectory_msgs std_srvs)
+target_include_directories(rtde_controller PRIVATE ${arspain_interfaces_INCLUDE_DIRS})
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_typesupport_cpp)
-target_link_libraries(rtde_controller "${cpp_typesupport_target}" ur_rtde::rtde polyfit_lib)
+target_link_libraries(rtde_controller PRIVATE
+  arspain_interfaces::arspain_interfaces rclcpp::rclcpp std_msgs::std_msgs
+  sensor_msgs::sensor_msgs geometry_msgs::geometry_msgs trajectory_msgs::trajectory_msgs
+  std_srvs::std_srvs "${cpp_typesupport_target}" ur_rtde::rtde polyfit_lib Eigen3::Eigen)
 
 # Install C++ Executables
 install(TARGETS
