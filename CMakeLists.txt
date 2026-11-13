@@ -45,6 +45,8 @@ find_package(ur_rtde REQUIRED)
 # Set Cusom Messages
 set(msg_files
   "msg/CartesianPoint.msg"
+  "msg/RtdeFeedbackPacket.msg"
+  "msg/RtdeFeedbackHealth.msg"
 )
 
 # Set Custom Services
@@ -104,6 +106,7 @@ install(TARGETS
 
 # Install Python Modules
 ament_python_install_package(scripts)
+ament_python_install_package(ur_rtde_feedback)
 
 # Install Python Scripts
 install(PROGRAMS
@@ -112,6 +115,9 @@ install(PROGRAMS
   scripts/move_robot.py
   DESTINATION lib/${PROJECT_NAME}
 )
+
+install(PROGRAMS scripts/rtde_feedback_collector.py
+  DESTINATION lib/${PROJECT_NAME} RENAME rtde_feedback_collector)
 
 # Install Launch Files
 install(DIRECTORY
@@ -123,6 +129,9 @@ if(BUILD_TESTING)
   enable_testing()
   add_executable(test_velocity_command_watchdog test/test_velocity_command_watchdog.cpp)
   add_test(NAME velocity_command_watchdog COMMAND test_velocity_command_watchdog)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME rtde_output_capture COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_rtde_output_capture.py)
+  add_test(NAME rtde_feedback_core COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_rtde_feedback_core.py)
   find_package(ament_lint_auto REQUIRED)
   #set(ament_cmake_copyright_FOUND TRUE)
   #set(ament_cmake_cpplint_FOUND TRUE)

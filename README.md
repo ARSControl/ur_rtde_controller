@@ -70,3 +70,33 @@ If you want to add a new robot, follow these steps:
 - Launch RTDE Controller
 
         ros2 launch ur_rtde_controller rtde_controller.launch.py ROBOT_IP:=192.168.xx.xx enable_gripper:=true/false
+
+## Independent output-only feedback
+
+The optional `rtde_feedback_collector` is a separate ROS process. Its launch
+file starts only that collector, not the motion controller. It negotiates a
+standard RTDE output recipe and publishes complete decoded packets and health;
+it does not create a control or IO interface, write robot input registers,
+upload scripts or issue motion or stop commands. Starting it still opens a
+network connection and adds controller/network load. It requires separate
+recording, a declared measurement configuration and qualification before
+physical-response latency can be reported.
+
+After reviewing the recording procedure and sourcing a verified build, the
+collector-only launch uses:
+
+```bash
+ros2 launch ur_rtde_controller rtde_feedback_collector.launch.py \
+  robot_ip:=192.168.2.40 frequency:=500.0 queue_capacity:=512 \
+  expected_version:=5.9.3 timeout_s:=3.0
+```
+
+The packet topic is `/ur_rtde/diagnostics/rtde_feedback_packet`; collector
+health is `/ur_rtde/diagnostics/rtde_feedback_health`. Local packet sequence
+and source timestamp gaps do not prove robot-side packet loss or losslessness.
+The collector never reconnects automatically: a fault or disconnect ends the
+session, and restarting it creates a new session. The observer must recheck
+its baseline and cannot silently resume a trial. If no complete RTDE data
+packet arrives within `timeout_s`, the session faults; text messages do not
+extend this deadline. Frame and TCP configuration
+must be independently established; the collector does not validate them.

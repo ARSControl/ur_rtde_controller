@@ -49,5 +49,12 @@ Thumbs.db
 *.wmv
 
 # Other folders
+!/test/
+/test/*
+!/test/test_velocity_command_watchdog.cpp
+!/test/test_rtde_output_capture.py
+!/test/test_rtde_feedback_core.py
+!/test/test_rtde_feedback_node.py
+!/test/test_installed_collector_import.py
 test/
 
