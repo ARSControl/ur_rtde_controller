@@ -369,6 +369,9 @@ void RTDEController::jointGoalCallback(const trajectory_msgs::msg::JointTrajecto
     // Check Velocity Limits
     if (velocity > JOINT_VELOCITY_MAX) {RCLCPP_ERROR(get_logger(), "Requested Velocity > Maximum Velocity\n"); return;}
 
+    // Exit Speed Mode (After Velocity Commands) Before the Position Movement
+    rtde_control_ -> speedStop();
+
     // Move to Joint Goal
     rtde_control_ -> moveJ(msg->positions, velocity, acceleration, asynchronous_);
 
@@ -392,6 +395,9 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::msg::Cartes
 
     // Check Tool Velocity Limits
     if (msg->velocity > TOOL_VELOCITY_MAX) {RCLCPP_ERROR(get_logger(), "Requested Velocity > Maximum Velocity\n"); return;}
+
+    // Exit Speed Mode (After Velocity Commands) Before the Position Movement
+    rtde_control_ -> speedStop();
 
     // Move to Linear Goal
     rtde_control_ -> moveL(desired_pose, msg->velocity, 1.20, asynchronous_);
@@ -519,6 +525,9 @@ bool RTDEController::startFreedriveModeCallback(const std::shared_ptr<ur_rtde_co
 
     // freeAxes = [1,0,0,0,0,0]     -> The robot is compliant in the x direction relative to the feature.
     // freeAxes: A 6 dimensional vector that contains 0’s and 1’s, these indicates in which axes movement is allowed. The first three values represents the cartesian directions along x, y, z, and the last three defines the rotation axis, rx, ry, rz. All relative to the selected feature
+
+    // Exit Speed Mode (After Velocity Commands) Before the Freedrive Mode
+    rtde_control_ -> speedStop();
 
     // Start FreeDrive Mode
     response->success = rtde_control_ -> freedriveMode(request->free_axes);
