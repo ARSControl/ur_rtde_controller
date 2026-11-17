@@ -3,6 +3,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -69,7 +70,8 @@
 #define TRAJECTORY_POSITION_GAIN 1.0
 #define TRAJECTORY_VELOCITY_TOLERANCE 0.01
 #define TRAJECTORY_MIN_ACCELERATION 1.0
-#define TRAJECTORY_SETTLING_TIME 1.0
+#define TRAJECTORY_TIMEOUT_FACTOR 1.1
+#define TRAJECTORY_MIN_SETTLING_TIME 0.5
 
 #define TORQUE_MODE_START_TIMEOUT 1.0
 
@@ -131,7 +133,8 @@ class RTDEController : public rclcpp::Node {
         trajectory::SampledTrajectory trajectory_;
         bool trajectory_active_ = false;
         size_t trajectory_index_ = 0;
-        size_t trajectory_settling_cycles_ = 0;
+        double trajectory_duration_ = 0.0;
+        std::chrono::steady_clock::time_point trajectory_settling_start_;
 
         // Torque Mode -> Dedicated Real-Time Thread Synchronized with the Robot Control Cycle
         std::atomic<bool> torque_mode_active_{false};

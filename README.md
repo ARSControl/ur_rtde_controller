@@ -83,7 +83,7 @@ Topic: `/ur_rtde/controllers/trajectory_controller/command` (`trajectory_msgs/Jo
 - The first point must be within `trajectory_start_tolerance` [rad] of the actual joint position, the initial velocity must match the actual one and the final velocity must be zero.
 - `joint_names` (if given) are used to reorder the joints.
 - A new trajectory replaces the one in execution.
-- At the end, `/ur_rtde/trajectory_executed` publishes `true` if the final point is reached within `trajectory_goal_tolerance` [rad], `false` otherwise.
+- At the end, `/ur_rtde/trajectory_executed` publishes `true` as soon as the final point is reached within `trajectory_goal_tolerance` [rad], `false` if it is still not reached within the settling time after the trajectory end (10% of the trajectory duration, minimum 0.5 s).
 
 ## Torque Mode (Direct Joint Torque Control)
 

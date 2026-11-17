@@ -317,7 +317,7 @@ void RTDEController::jointTrajectoryCallback(const trajectory_msgs::msg::JointTr
         std::lock_guard<std::mutex> lock(trajectory_mutex_);
         trajectory_ = std::move(sampled);
         trajectory_index_ = 0;
-        trajectory_settling_cycles_ = 0;
+        trajectory_duration_ = duration;
         trajectory_active_ = true;
     }
 
@@ -921,21 +921,26 @@ void RTDEController::moveTrajectory()
         const size_t k = trajectory_index_++;
         desired_velocity = trajectory_.velocity[k] + TRAJECTORY_POSITION_GAIN * (trajectory_.position[k] - q);
         acceleration = std::max(trajectory_.acceleration[k].cwiseAbs().maxCoeff(), TRAJECTORY_MIN_ACCELERATION);
+
+        // Last Sample Sent -> Start the Settling Timer (Wall Clock, Independent of Loop Overruns)
+        if (trajectory_index_ == trajectory_.size()) trajectory_settling_start_ = std::chrono::steady_clock::now();
     }
     else
     {
-        // Settling -> Position Correction on the Final Point until Goal Tolerance or Timeout
+        // Settling -> Position Correction on the Final Point until Goal Tolerance or Timeout (max(0.1 x Trajectory Duration, TRAJECTORY_MIN_SETTLING_TIME))
         Eigen::VectorXd error = trajectory_.position.back() - q;
         bool goal_reached = error.cwiseAbs().maxCoeff() < trajectory_goal_tolerance_;
+        const double max_settling_time = std::max((TRAJECTORY_TIMEOUT_FACTOR - 1.0) * trajectory_duration_, TRAJECTORY_MIN_SETTLING_TIME);
+        const double settling_time = std::chrono::duration<double>(std::chrono::steady_clock::now() - trajectory_settling_start_).count();
 
-        if (goal_reached || ++trajectory_settling_cycles_ > TRAJECTORY_SETTLING_TIME * rate_)
+        if (goal_reached || settling_time > max_settling_time)
         {
             // Stop Speed Mode
             rtde_control_ -> speedStop();
             trajectory_active_ = false;
             lock.unlock();
 
-            if (!goal_reached) RCLCPP_ERROR(get_logger(), "ERROR: Trajectory Goal Not Reached | Error: %.5f rad\n", error.cwiseAbs().maxCoeff());
+            if (!goal_reached) RCLCPP_ERROR(get_logger(), "ERROR: Trajectory Goal Not Reached within %.3f s Settling Time | Error: %.5f rad\n", max_settling_time, error.cwiseAbs().maxCoeff());
 
             // Publish Trajectory Executed
             publishTrajectoryExecuted(goal_reached);
