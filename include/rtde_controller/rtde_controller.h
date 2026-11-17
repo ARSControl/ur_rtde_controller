@@ -2,8 +2,11 @@
 #define RTDE_CONTROLLER_H
 
 #include <ros/ros.h>
+#include <atomic>
+#include <chrono>
+#include <memory>
+#include <mutex>
 #include <thread>
-#include <signal.h>
 
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>
@@ -24,8 +27,8 @@
 #include <std_srvs/Trigger.h>
 #include <std_srvs/SetBool.h>
 
-#include "ur_rtde_controller/RobotiQGripperControl.h"
 #include "ur_rtde_controller/CartesianPoint.h"
+#include "ur_rtde_controller/RobotiQGripperControl.h"
 #include "ur_rtde_controller/GetForwardKinematic.h"
 #include "ur_rtde_controller/GetInverseKinematic.h"
 #include "ur_rtde_controller/StartFreedriveMode.h"
@@ -34,7 +37,7 @@
 
 #include <Eigen/Dense>
 
-#include "polyfit/polyfit.h"
+#include "trajectory/joint_trajectory_sampler.h"
 
 #define JOINT_LIMITS 6.28
 #define JOINT_VELOCITY_MAX 3.14
@@ -63,35 +66,44 @@
 #define ROBOT_MODE_RUNNING 7
 #define ROBOT_MODE_UPDATING_FIRMWARE 8
 
-#define SENSOR_ERROR 10e-5
+#define TRAJECTORY_POSITION_GAIN 1.0
+#define TRAJECTORY_VELOCITY_TOLERANCE 0.01
+#define TRAJECTORY_MIN_ACCELERATION 1.0
+#define TRAJECTORY_TIMEOUT_FACTOR 1.1
+#define TRAJECTORY_MIN_SETTLING_TIME 0.5
 
 class RTDEController {
 
-	public:
+    public:
 
-        RTDEController(ros::NodeHandle &nh, ros::Rate ros_rate);
+        RTDEController();
         ~RTDEController();
 
-        void spinner();
+        void spinner(void);
 
-        // ROS2 Publishers Functions
+        // ROS Publishers Functions
         void publishJointState();
         void publishTCPPose();
         void publishFTSensor();
-        bool shutdown_ = false;
+        void checkRobot();
 
-	private:
+        // ROS Rate
+        double rate_;
 
-        // ROS - Node Handle & Rate
+    private:
+
+        // ROS Node Handles -> Global (Topics, Services) and Private (Parameters)
         ros::NodeHandle nh_;
-        ros::Rate ros_rate_;
+        ros::NodeHandle private_nh_;
 
         // Parameters
         std::string ROBOT_IP;
         bool enable_gripper_;
-        bool asynchronous_;
+        std::atomic<bool> asynchronous_;
         bool limit_acc_;
         bool ft_sensor_;
+        double trajectory_start_tolerance_;
+        double trajectory_goal_tolerance_;
 
         // Initialization Variables
         bool rtde_dashboard_initialized = false;
@@ -102,26 +114,34 @@ class RTDEController {
         bool robot_initialized = false;
 
         // Global Variables
+        sensor_msgs::JointState joint_state_;
+        geometry_msgs::Pose actual_cartesian_pose_;
+        std::atomic<bool> new_async_joint_pose_received_{false};
+        std::atomic<bool> new_async_cartesian_pose_received_{false};
+
+        // Actual Joint State -> Written by publishJointState, Read by the Command Callbacks
+        std::mutex joint_state_mutex_;
         std::vector<double> actual_joint_position_;
         std::vector<double> actual_joint_velocity_;
-        geometry_msgs::Pose actual_cartesian_pose_;
-        bool new_trajectory_received_ = false;
-        bool new_async_joint_pose_received_ = false;
-        bool new_async_cartesian_pose_received_ = false;
+        std::vector<double> getActualJointPosition();
+        std::vector<double> getActualJointVelocity();
 
-        // Trajectory Variables
-        PolyFit fitting;
-        PolyFit polynomial_fit_;
-        double trajectory_time_;
+        // Trajectory Variables -> Written by jointTrajectoryCallback, Executed by moveTrajectory
+        std::mutex trajectory_mutex_;
+        trajectory::SampledTrajectory trajectory_;
+        bool trajectory_active_ = false;
+        size_t trajectory_index_ = 0;
+        double trajectory_duration_ = 0.0;
+        std::chrono::steady_clock::time_point trajectory_settling_start_;
 
         // UR RTDE Library
-        ur_rtde::RTDEControlInterface *rtde_control_;
-        ur_rtde::RTDEReceiveInterface *rtde_receive_;
-        ur_rtde::RTDEIOInterface *rtde_io_;
-        ur_rtde::DashboardClient *rtde_dashboard_;
+        std::unique_ptr<ur_rtde::RTDEControlInterface> rtde_control_;
+        std::unique_ptr<ur_rtde::RTDEReceiveInterface> rtde_receive_;
+        std::unique_ptr<ur_rtde::RTDEIOInterface> rtde_io_;
+        std::unique_ptr<ur_rtde::DashboardClient> rtde_dashboard_;
 
         // RobotiQ Gripper
-        ur_rtde::RobotiqGripper *robotiq_gripper_;
+        std::unique_ptr<ur_rtde::RobotiqGripper> robotiq_gripper_;
 
         // ROS Publishers
         ros::Publisher joint_state_pub_;
@@ -129,22 +149,29 @@ class RTDEController {
         ros::Publisher ft_sensor_pub_;
         ros::Publisher trajectory_executed_pub_;
 
-    	// ROS Subscribers and Callbacks
+        // ROS Timers
+        ros::WallTimer checkRobot_timer_;
+        ros::WallTimer tcpPose_timer_;
+        ros::WallTimer force_timer_;
+        ros::WallTimer jointState_timer_;
+
+        // ROS Subscribers and Callbacks
         ros::Subscriber trajectory_command_sub_;
         ros::Subscriber joint_goal_command_sub_;
         ros::Subscriber cartesian_goal_command_sub_;
         ros::Subscriber joint_velocity_command_sub_;
         ros::Subscriber cartesian_velocity_command_sub_;
         ros::Subscriber digital_io_set_sub_;
+        ros::Subscriber tool_digital_io_set_sub_;
+        void jointTrajectoryCallback(const trajectory_msgs::JointTrajectory::ConstPtr &msg);
+        void jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint::ConstPtr &msg);
+        void cartesianGoalCallback(const ur_rtde_controller::CartesianPoint::ConstPtr &msg);
+        void jointVelocityCallback(const std_msgs::Float64MultiArray::ConstPtr &msg);
+        void cartesianVelocityCallback(const geometry_msgs::Twist::ConstPtr &msg);
+        void digitalIOSetCallback(const std_msgs::Int8::ConstPtr &msg);
+        void toolDigitalIOSetCallback(const std_msgs::Int8::ConstPtr &msg);
 
-        void jointTrajectoryCallback(const trajectory_msgs::JointTrajectory msg);
-        void jointGoalCallback(const trajectory_msgs::JointTrajectoryPoint msg);
-        void cartesianGoalCallback(const ur_rtde_controller::CartesianPoint msg);
-        void jointVelocityCallback(const std_msgs::Float64MultiArray msg);
-        void cartesianVelocityCallback(const geometry_msgs::Twist msg);
-		void digitalIOSetCallback(const std_msgs::Int8 msg);
-
-    	// ROS Service Servers and Callbacks
+        // ROS Service Servers and Callbacks
         ros::ServiceServer stop_robot_server_;
         ros::ServiceServer set_async_parameter_server_;
         ros::ServiceServer start_FreedriveMode_server_;
@@ -158,14 +185,14 @@ class RTDEController {
         ros::ServiceServer disable_gripper_server_;
         ros::ServiceServer gripper_current_position_server_;
         bool stopRobotCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
-        bool setAsyncParameterCallback(std_srvs::SetBoolRequest &req, std_srvs::SetBoolResponse &res);
-        bool startFreedriveModeCallback(ur_rtde_controller::StartFreedriveMode::Request  &req, ur_rtde_controller::StartFreedriveMode::Response &res);
+        bool setAsyncParameterCallback(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res);
+        bool startFreedriveModeCallback(ur_rtde_controller::StartFreedriveMode::Request &req, ur_rtde_controller::StartFreedriveMode::Response &res);
         bool stopFreedriveModeCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
         bool zeroFTSensorCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
-        bool getForwardKinematicCallback(ur_rtde_controller::GetForwardKinematic::Request  &req, ur_rtde_controller::GetForwardKinematic::Response &res);
-        bool getInverseKinematicCallback(ur_rtde_controller::GetInverseKinematic::Request  &req, ur_rtde_controller::GetInverseKinematic::Response &res);
-        bool getSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request  &req, ur_rtde_controller::GetRobotStatus::Response &res);
-        bool RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request  &req, ur_rtde_controller::RobotiQGripperControl::Response &res);
+        bool getForwardKinematicCallback(ur_rtde_controller::GetForwardKinematic::Request &req, ur_rtde_controller::GetForwardKinematic::Response &res);
+        bool getInverseKinematicCallback(ur_rtde_controller::GetInverseKinematic::Request &req, ur_rtde_controller::GetInverseKinematic::Response &res);
+        bool getSafetyStatusCallback(ur_rtde_controller::GetRobotStatus::Request &req, ur_rtde_controller::GetRobotStatus::Response &res);
+        bool RobotiQGripperCallback(ur_rtde_controller::RobotiQGripperControl::Request &req, ur_rtde_controller::RobotiQGripperControl::Response &res);
         bool enableRobotiQGripperCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
         bool disableRobotiQGripperCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
         bool currentPositionRobotiQGripperCallback(ur_rtde_controller::GetGripperPosition::Request &req, ur_rtde_controller::GetGripperPosition::Response &res);
@@ -177,7 +204,7 @@ class RTDEController {
 
         // Utilities Functions
         void resetBooleans();
-        void publishTrajectoryExecuted();
+        void publishTrajectoryExecuted(bool success = true);
         void checkRobotStatus();
         std::vector<double> Pose2RTDE(geometry_msgs::Pose pose);
         geometry_msgs::Pose RTDE2Pose(std::vector<double> rtde_pose);
@@ -186,7 +213,6 @@ class RTDEController {
         Eigen::Matrix<double, 4, 4> pose2eigen(geometry_msgs::Pose pose);
         Eigen::VectorXd computePoseError(Eigen::Matrix<double, 4, 4> T_des, Eigen::Matrix<double, 4, 4> T);
         bool isPoseReached(Eigen::VectorXd position_error, double movement_precision);
-        bool isJointReached();
 
 };
 

@@ -1,19 +1,27 @@
 <launch>
 
-    <!-- Robot Agruments -->
-    <arg name="ROBOT_IP"       default="192.168.2.40"/>
-    <arg name="enable_gripper" default="True"/>
-    <arg name="asynchronous"   default="False"/>
-    <arg name="limit_acc"      default="True"/>
-    <arg name="ft_sensor"      default="True"/>
+    <!-- Robot Arguments -->
+    <arg name="ROBOT_IP"                   default="192.168.2.40"/>
+    <arg name="enable_gripper"             default="false"/>
+    <arg name="asynchronous"               default="false"/>
+    <arg name="limit_acc"                  default="true"/>
+    <arg name="ft_sensor"                  default="true"/>
+    <arg name="rate"                       default="500.0"/>
+    <arg name="joint_state_topic"          default="/joint_states"/>
+    <arg name="trajectory_start_tolerance" default="0.001"/>
+    <arg name="trajectory_goal_tolerance"  default="0.001"/>
 
-    <!-- RTDE - Position Controller -->
+    <!-- RTDE Controller -->
     <node pkg="ur_rtde_controller" type="rtde_controller" name="ur_rtde_controller" output="screen">
-        <param name="ROBOT_IP"       value="$(arg ROBOT_IP)"/>
-        <param name="enable_gripper" value="$(arg enable_gripper)"/>
-        <param name="asynchronous"   value="$(arg asynchronous)"/>
-        <param name="limit_acc"      value="$(arg limit_acc)"/>
-        <param name="ft_sensor"      value="$(arg ft_sensor)"/>
+        <param name="ROBOT_IP"                   value="$(arg ROBOT_IP)"/>
+        <param name="enable_gripper"             value="$(arg enable_gripper)"/>
+        <param name="asynchronous"               value="$(arg asynchronous)"/>
+        <param name="limit_acc"                  value="$(arg limit_acc)"/>
+        <param name="ft_sensor"                  value="$(arg ft_sensor)"/>
+        <param name="rate"                       value="$(arg rate)"/>
+        <param name="trajectory_start_tolerance" value="$(arg trajectory_start_tolerance)"/>
+        <param name="trajectory_goal_tolerance"  value="$(arg trajectory_goal_tolerance)"/>
+        <remap from="/joint_states" to="$(arg joint_state_topic)"/>
     </node>
 
 </launch>

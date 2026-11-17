@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.5)
 project(ur_rtde_controller)
 
-add_compile_options(-std=c++17)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
@@ -58,9 +59,20 @@ include_directories(
   ${EIGEN3_INCLUDE_DIR}
 )
 
-add_library(polyfit_lib src/polyfit/polyfit.cpp)
+# Joint Trajectory Sampler Library
+add_library(joint_trajectory_sampler STATIC src/trajectory/joint_trajectory_sampler.cpp)
+target_include_directories(joint_trajectory_sampler PUBLIC include ${EIGEN3_INCLUDE_DIR})
 
 # RTDE Controller
 add_executable(rtde_controller src/rtde_controller/rtde_controller.cpp)
 add_dependencies(rtde_controller ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-target_link_libraries(rtde_controller ${catkin_LIBRARIES} ur_rtde::rtde polyfit_lib)
+target_link_libraries(rtde_controller ${catkin_LIBRARIES} ur_rtde::rtde joint_trajectory_sampler)
+
+# Install
+install(TARGETS rtde_controller
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(DIRECTORY launch
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
