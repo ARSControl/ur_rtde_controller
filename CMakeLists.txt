@@ -125,7 +125,7 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/test")
   enable_testing()
   add_executable(test_velocity_command_watchdog test/test_velocity_command_watchdog.cpp)
   add_test(NAME velocity_command_watchdog COMMAND test_velocity_command_watchdog)
