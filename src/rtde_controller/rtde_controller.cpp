@@ -168,6 +168,10 @@ RTDEController::RTDEController(): Node ("ur_rtde_controller") {
                                     command_qos, std::bind(&RTDEController::jointVelocityCallback, this, std::placeholders::_1),sub_options);
     
     
+    identified_joint_velocity_sub_ = create_subscription<arspain_interfaces::msg::IdentifiedJointVelocity>(
+        "/ur_rtde/identified_joint_velocity", command_qos,
+        std::bind(&RTDEController::identifiedJointVelocityCallback, this, std::placeholders::_1), sub_options);
+
     cartesian_velocity_callback_group_ = control_callback_group_;
     sub_options.callback_group = cartesian_velocity_callback_group_;
     cartesian_velocity_command_sub_ = create_subscription<geometry_msgs::msg::Twist>("/ur_rtde/controllers/cartesian_velocity_controller/command",
@@ -349,11 +353,14 @@ bool RTDEController::setVelocityCommandsCallback(
             {
                 // These volatile messages were queued before the resume acknowledgement.
                 std_msgs::msg::Float64MultiArray joint_velocity;
+                arspain_interfaces::msg::IdentifiedJointVelocity identified_velocity;
                 geometry_msgs::msg::Twist cartesian_velocity;
                 rclcpp::MessageInfo info;
                 while (joint_velocity_command_sub_->take(joint_velocity, info)) {}
+                while (identified_joint_velocity_sub_->take(identified_velocity, info)) {}
                 while (cartesian_velocity_command_sub_->take(cartesian_velocity, info)) {}
                 velocity_watchdog_.reset();
+                host_velocity_identity_.reopen(arspain_diagnostics::monotonicNs());
                 velocity_commands_enabled_ = true;
             }
             response->message = response->success ? "Velocity commands enabled." :
@@ -551,28 +558,66 @@ void RTDEController::cartesianGoalCallback(const ur_rtde_controller::msg::Cartes
 
 void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
 {
+    executeJointVelocity(msg->data, nullptr);
+}
+
+void RTDEController::identifiedJointVelocityCallback(
+    const arspain_interfaces::msg::IdentifiedJointVelocity::SharedPtr msg)
+{
+    executeJointVelocity(std::vector<double>(msg->velocity.begin(), msg->velocity.end()), msg.get());
+}
+
+void RTDEController::executeJointVelocity(
+    const std::vector<double> &velocity,
+    const arspain_interfaces::msg::IdentifiedJointVelocity *identity)
+{
     auto observer=std::atomic_load(&diagnostics_);
     if(observer && !observer->commandsInterested())observer.reset();
     arspain_diagnostics::Driver d;
     if(observer){d.kind.set("joint_velocity");d.received_ns=arspain_diagnostics::monotonicNs();d.velocity_enabled=velocity_commands_enabled_;d.result.set("rejected_or_gated");
-      d.quality.set("Legacy Float64MultiArray: no exact controller command identity");if(msg->data.size()==6)std::copy(msg->data.begin(),msg->data.end(),d.command.begin());}
+      d.quality.set("Legacy Float64MultiArray: no exact controller command identity");if(velocity.size()==6)std::copy(velocity.begin(),velocity.end(),d.command.begin());}
+    if (observer && identity) {
+        d.controller_session.set(identity->controller_session);
+        d.cycle_id = identity->cycle_id;
+        d.mode_epoch = identity->mode_epoch;
+    }
     struct RecordOnExit {std::shared_ptr<arspain_diagnostics::Observer> observer;arspain_diagnostics::Driver& d;
       ~RecordOnExit(){if(observer){if(!d.call_end_ns)d.call_end_ns=arspain_diagnostics::monotonicNs();observer->observation(d);}}} record_on_exit{observer,d};
 
     // Inspect the old timestamp first: a late arrival must not hide a lost stream.
     if (!checkVelocityCommandWatchdog()) { if(observer)d.result.set("watchdog_rejected");return; }
     if (!velocity_commands_enabled_ || motionBusy() || motion_mode_ == MotionMode::Freedrive) { if(observer)d.result.set("motion_or_velocity_gate");return; }
+    // Check Input Data Size
+    if (velocity.size() != 6) {if(observer)d.result.set("invalid_size");RCLCPP_ERROR(get_logger(), "ERROR: Received Joint Velocity Size != 6\n"); return;}
+
+    if (!std::all_of(velocity.begin(), velocity.end(), [](double x) { return std::isfinite(x); })) {
+        if(observer)d.result.set("nonfinite_velocity");
+        return;
+    }
+
+    if (identity) {
+        const auto *reason = host_velocity_identity_.accept(*identity, arspain_diagnostics::monotonicNs(),
+            static_cast<uint64_t>(velocity_watchdog_.timeout() * 1e9));
+        if (reason) { if(observer)d.result.set(reason); return; }
+        if (observer) {
+            d.exact_command_identity = true;
+            d.controller_session.set(identity->controller_session);
+            d.cycle_id = identity->cycle_id;
+            d.mode_epoch = identity->mode_epoch;
+            d.quality.set("Exact host command identity; API call entry/return, robot selection unobserved");
+        }
+    } else if (!host_velocity_identity_.legacy()) {
+        if(observer)d.result.set("identified_velocity_owner");
+        return;
+    }
     if (motion_mode_ == MotionMode::CartesianVelocity && !rtde_control_->speedStop(2.0))
     {
         failMotion("Could not stop the previous velocity mode.");
         return;
     }
 
-    // Check Input Data Size
-    if (msg->data.size() != 6) {if(observer)d.result.set("invalid_size");RCLCPP_ERROR(get_logger(), "ERROR: Received Joint Velocity Size != 6\n"); return;}
-
     // Get Current and Desired Joint Velocity
-    std::vector<double> desired_velocity = msg->data;
+    std::vector<double> desired_velocity = velocity;
     std::vector<double> current_velocity = rtde_receive_->getActualQd();
 
     // // Compute Velocity Difference
@@ -596,6 +641,15 @@ void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArra
         // Feedback reads or switching out of speedL can block. Recheck the
         // original successful-command time before sending or renewing speedJ.
         if (!checkVelocityCommandWatchdog()) { if(observer)d.result.set("watchdog_rejected");return; }
+        if (identity) {
+            const auto before_call = arspain_diagnostics::monotonicNs();
+            if (before_call < identity->publication_begin_ns ||
+                before_call - identity->publication_begin_ns >= static_cast<uint64_t>(velocity_watchdog_.timeout() * 1e9)) {
+                if(observer)d.result.set("stale_before_api_call");
+                return;
+            }
+        }
+        const auto call_started = VelocityCommandWatchdog::Clock::now();
         if(observer)d.call_begin_ns=arspain_diagnostics::monotonicNs();
         if (!rtde_control_->speedJ(desired_velocity, acceleration, 0.0001))
         {
@@ -603,9 +657,23 @@ void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArra
             failMotion("speedJ returned false.");
             return;
         }
-        if(observer){d.call_end_ns=arspain_diagnostics::monotonicNs();d.result.set("rtde_accepted");}
+        const auto call_returned = VelocityCommandWatchdog::Clock::now();
+        if(observer)d.call_end_ns=arspain_diagnostics::monotonicNs();
+        if (identity && velocity_watchdog_.expiredDuringCall(call_started, call_returned)) {
+            if(observer)d.result.set("watchdog_expired_after_call");
+            velocity_commands_enabled_ = false;
+            velocity_watchdog_fault_ = true;
+            // The command may have reached the robot even on a delayed first
+            // call. Take the velocity stop path while its prior mode was Idle.
+            motion_mode_ = MotionMode::JointVelocity;
+            const bool stopped = stopVelocityAndFreedrive();
+            failMotion(stopped ? "Identified velocity watchdog expired during the API call; stop requested." :
+                                 "Identified velocity watchdog expired during the API call; stop unconfirmed.");
+            return;
+        }
+        if(observer)d.result.set("rtde_accepted");
         motion_mode_ = MotionMode::JointVelocity;
-        velocity_watchdog_.successfulCommand(VelocityCommandWatchdog::Clock::now());
+        velocity_watchdog_.successfulCommand(call_returned);
     }
     catch (const std::exception & error) { if(observer){d.result.set("rtde_exception");d.call_end_ns=arspain_diagnostics::monotonicNs();}failMotion(error.what()); }
 }
@@ -613,6 +681,7 @@ void RTDEController::jointVelocityCallback(const std_msgs::msg::Float64MultiArra
 void RTDEController::cartesianVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
     if (!checkVelocityCommandWatchdog()) { return; }
+    if (host_velocity_identity_.identified()) { return; }
     if (!velocity_commands_enabled_ || motionBusy() || motion_mode_ == MotionMode::Freedrive) { return; }
     if (motion_mode_ == MotionMode::JointVelocity && !rtde_control_->speedStop(2.0))
     {
@@ -941,7 +1010,7 @@ void RTDEController::publishTCPPose()
     tcp_pose_pub_ -> publish(actual_cartesian_pose_);
     auto observer=std::atomic_load(&diagnostics_);
     if(observer && observer->feedbackInterested()){
-      arspain_diagnostics::Driver d;d.kind.set("feedback");d.received_ns=arspain_diagnostics::monotonicNs();d.result.set("snapshot");
+      arspain_diagnostics::Driver d;d.kind.set("feedback");d.received_ns=arspain_diagnostics::monotonicNs();d.call_begin_ns=d.received_ns;d.result.set("snapshot");
       try {
         d.robot_time_before=rtde_receive_->getTimestamp();
         const auto q=rtde_receive_->getActualQ(),dq=rtde_receive_->getActualQd();

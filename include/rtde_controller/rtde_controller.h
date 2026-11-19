@@ -1,4 +1,6 @@
 #include <arspain_interfaces/diagnostics.hpp>
+#include <arspain_interfaces/msg/identified_joint_velocity.hpp>
+#include "rtde_controller/host_velocity_identity.h"
 #ifndef RTDE_CONTROLLER_H
 #define RTDE_CONTROLLER_H
 
@@ -134,6 +136,7 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         bool velocity_commands_enabled_ = true;
         VelocityCommandWatchdog velocity_watchdog_;
         bool velocity_watchdog_fault_ = false;
+        HostVelocityIdentity host_velocity_identity_{arspain_diagnostics::clockId()};
 
         // ROS2 Publishers
         rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
@@ -167,6 +170,7 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         rclcpp::Subscription<trajectory_msgs::msg::JointTrajectoryPoint>::SharedPtr joint_goal_command_sub_;
         rclcpp::Subscription<ur_rtde_controller::msg::CartesianPoint>::SharedPtr cartesian_goal_command_sub_;
         rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr joint_velocity_command_sub_;
+        rclcpp::Subscription<arspain_interfaces::msg::IdentifiedJointVelocity>::SharedPtr identified_joint_velocity_sub_;
         rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cartesian_velocity_command_sub_;
         rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr digital_io_set_sub_;
         rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr tool_digital_io_set_sub_;
@@ -174,6 +178,9 @@ class RTDEController : public rclcpp::Node, public std::enable_shared_from_this<
         void jointGoalCallback(const trajectory_msgs::msg::JointTrajectoryPoint::SharedPtr msg);
         void cartesianGoalCallback(const ur_rtde_controller::msg::CartesianPoint::SharedPtr msg);
         void jointVelocityCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
+        void identifiedJointVelocityCallback(const arspain_interfaces::msg::IdentifiedJointVelocity::SharedPtr msg);
+        void executeJointVelocity(const std::vector<double> &velocity,
+                                  const arspain_interfaces::msg::IdentifiedJointVelocity *identity);
         void cartesianVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
         void digitalIOSetCallback(const std_msgs::msg::Int8::SharedPtr msg);
         void toolDigitalIOSetCallback(const std_msgs::msg::Int8::SharedPtr msg);

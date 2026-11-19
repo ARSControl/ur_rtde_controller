@@ -56,6 +56,12 @@ public:
     return velocity_mode && last_ &&
            now - *last_ >= std::chrono::duration < double > (timeout_);
   }
+  // A blocked send must not erase an expired stream timestamp when it
+  // eventually returns. The first call also has a maximum duration.
+  bool expiredDuringCall(Clock::time_point begin, Clock::time_point end) const {
+    return end < begin || end - begin >= std::chrono::duration<double>(timeout_) ||
+           expired(end, armed());
+  }
   bool armed() const {return last_.has_value();}
   double timeout() const {return timeout_;}
   double commandAge(Clock::time_point now) const {
